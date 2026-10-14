@@ -264,7 +264,7 @@ workflow publishes to npm with provenance (see `CHANGELOG.md`).
 
 - [honk-me.app](https://honk-me.app): the Honk inbox (web, iPhone, Apple Watch).
 - From a shell, cron or CI: the `honk` CLI in [honk-go](https://github.com/honk-me/honk-go)
-  (`honk uhoh --group-key db/backup --title "Backup failed" --message "exit 1"`).
+  (`honk uhoh backup/db-1 "Backup failed" "Exit code 1"`).
 - Other SDKs: [PHP / Laravel](https://github.com/honk-me/honk-php),
   [Go + CLI](https://github.com/honk-me/honk-go), [Swift](https://github.com/honk-me/honk-swift),
   [Kotlin / Java](https://github.com/honk-me/honk-kotlin), [Rust](https://github.com/honk-me/honk-rust).
