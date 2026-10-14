@@ -30,7 +30,7 @@ export interface HonkErrorInit {
 }
 
 /**
- * Base class of every error thrown by `send()`. Check `kind` (or `instanceof`) to decide what to do:
+ * Base class of every error thrown by `honk()` (and the helpers). Check `kind` (or `instanceof`) to decide what to do:
  * `retryable` errors can be retried later with the same `idempotencyKey` without creating duplicates.
  */
 export class HonkError extends Error {

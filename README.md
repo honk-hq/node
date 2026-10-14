@@ -7,6 +7,23 @@ Official Node.js / TypeScript client for [Honk](https://honk-me.app), the inbox 
 events from your apps, scripts, cron jobs and CI into calm, grouped push notifications on your
 phone.
 
+```js
+import { Honk } from 'honk-me';
+
+const honk = Honk.fromEnv(); // HONK_URL and HONK_KEY
+
+await honk.uhoh('oven/kitchen', 'The cake is burning', 'Oven at 260 °C. The smoke alarm agrees.');
+// …a few tense minutes later
+await honk.phew('oven/kitchen', 'Cake saved', 'Nobody needs to know.');
+
+await honk.honk({ title: 'Someone bought 3 rubber chickens', message: 'Order 1042, €2.97', severity: 'beep' });
+```
+
+`uhoh` opens an incident for `oven/kitchen` and your phone honks. If the oven keeps
+complaining, the same notification is updated instead of honking again. `phew` closes the
+incident, and `honk` sends anything else. Until 0.3.0 these were `send()`, `problem()` and
+`recovery()`; the old names still work and send exactly the same request.
+
 - Zero runtime dependencies. ESM, CommonJS and TypeScript types.
 - Node 18+ (global `fetch`). Also works on Bun and Deno (`npm:honk-me`).
 - Retries with backoff, `Retry-After`, a total deadline and an idempotency key on every send,
@@ -68,7 +85,7 @@ const honk = Honk.fromEnv(); // create once, reuse (keep-alive)
 export async function onCustomerRequest(req) {
   // ...save the request first, then notify without blocking the response:
   honk
-    .send(
+    .honk(
       {
         title: `New request: ${req.subject}`.slice(0, 160),
         message: `${req.name} (${req.company}) asked: ${req.body}`.slice(0, 2000),
@@ -93,12 +110,12 @@ In a queue worker (BullMQ, SQS, …) `await` the call and let the job retry on
 Messages with the same `groupKey` (per project, environment, source and channel) form one
 group: the first one pushes, repeats update it calmly instead of buzzing again. Use one key
 per customer request (`requests/<id>`), and a shared key only for repeats of the same problem
-(`queue/failed-jobs`). `problem`/`recovery` pairs need a `groupKey`.
+(`queue/failed-jobs`). `uhoh`/`phew` pairs need a `groupKey`.
 
 ## Sending
 
 ```ts
-honk.send(message, { idempotencyKey?, signal? }) // → Promise<{ id, duplicate, receivedAt }>
+honk.honk(message, { idempotencyKey?, signal? }) // → Promise<{ id, duplicate, receivedAt }>
 ```
 
 | Field | Type | Notes |
@@ -129,8 +146,8 @@ Helpers (the last argument takes any message field plus `idempotencyKey` and `si
 await honk.loud('Disk 91%', '/var on app-01', { groupKey: 'disk/app-01/var' });
 await honk.light('Deploy started', 'v4.2.0 to production', { channel: 'deploys' });
 await honk.beep(title, message, opts); await honk.long(title, message, opts); await honk.blast(title, message, opts);
-await honk.problem('db/backup', 'Backup failed', 'pg_dump exited with 1');      // a long honk by default
-await honk.recovery('db/backup', 'Backup OK', 'pg_dump finished in 41 s');      // a beep by default
+await honk.uhoh('db/backup', 'Backup failed', 'pg_dump exited with 1');   // event_type problem, a long honk by default
+await honk.phew('db/backup', 'Backup OK', 'pg_dump finished in 41 s');    // event_type recovery, a beep by default
 ```
 
 ### Buttons (actions)
@@ -139,7 +156,7 @@ Up to three buttons on the message, in display order: reply to the customer, cal
 the order.
 
 ```js
-await honk.send({
+await honk.honk({
   title: 'New request: online shop quote',
   message: 'Emily Carter (Acme) asked for a quote: online shop, 40 products',
   category: 'customers',
@@ -178,7 +195,7 @@ new Honk({
 
 ## Retries and idempotency, guaranteed
 
-- Every `send()` carries an `Idempotency-Key`: yours, or a fresh UUIDv7. **The same key is
+- Every `honk()` (and every helper) carries an `Idempotency-Key`: yours, or a fresh UUIDv7. **The same key is
   reused on every retry.** Within 24 h Honk answers a replay with the original id and
   `duplicate: true`, so a lost response never creates a second message.
 - Only network errors, timeouts, `429` and `5xx` are retried, with exponential backoff and
@@ -211,7 +228,7 @@ Every error is a `HonkError` with `kind`, `status`, `code`, `requestId`, `idempo
 import { HonkError, HonkValidationError } from 'honk-me';
 
 try {
-  await honk.send(msg, { idempotencyKey: `order-${order.id}-failed` });
+  await honk.honk(msg, { idempotencyKey: `order-${order.id}-failed` });
 } catch (err) {
   if (err instanceof HonkValidationError) logger.error(err.fields);   // a bug: don't retry
   else if (err instanceof HonkError && err.retryable) queue.retryLater(err.idempotencyKey, err.retryAfter);
@@ -246,6 +263,8 @@ workflow publishes to npm with provenance (see `CHANGELOG.md`).
 ## Links
 
 - [honk-me.app](https://honk-me.app): the Honk inbox (web, iPhone, Apple Watch).
+- From a shell, cron or CI: the `honk` CLI in [honk-go](https://github.com/honk-me/honk-go)
+  (`honk uhoh --group-key db/backup --title "Backup failed" --message "exit 1"`).
 - Other SDKs: [PHP / Laravel](https://github.com/honk-me/honk-php),
   [Go + CLI](https://github.com/honk-me/honk-go), [Swift](https://github.com/honk-me/honk-swift),
   [Kotlin / Java](https://github.com/honk-me/honk-kotlin), [Rust](https://github.com/honk-me/honk-rust).

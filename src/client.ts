@@ -43,8 +43,12 @@ class TimeoutSignal {}
  *
  * ```ts
  * const honk = new Honk({ url: process.env.HONK_URL!, key: process.env.HONK_KEY! });
- * await honk.send({ title: 'Backup finished', message: 'nightly pg_dump took 42 s', severity: 'success' });
+ * await honk.uhoh('oven/kitchen', 'The cake is burning', 'Oven at 260 °C, smoke detected');
+ * await honk.phew('oven/kitchen', 'Cake saved', 'Nobody needs to know.');
  * ```
+ *
+ * `honk()`, `uhoh()` and `phew()` were called `send()`, `problem()` and `recovery()` before
+ * 0.3.0; the old names still work and send exactly the same requests.
  */
 export class Honk {
   readonly url: string;
@@ -106,8 +110,12 @@ export class Honk {
    * Sends one event. Resolves once Honk has durably stored it (`202`), which does not mean a push
    * was delivered. Retries network errors, 429 and 5xx with the same Idempotency-Key until
    * `retries` or `deadlineMs` runs out, then throws a {@link HonkError}.
+   *
+   * ```ts
+   * await honk.honk({ title: 'Someone bought 3 rubber chickens', message: 'Order 1042, €2.97', severity: 'beep' });
+   * ```
    */
-  async send(message: Message, options: SendOptions = {}): Promise<SendResult> {
+  async honk(message: Message, options: SendOptions = {}): Promise<SendResult> {
     const body = JSON.stringify(buildBody(message, this.defaults, this.validate));
     const idempotencyKey = options.idempotencyKey === undefined ? await uuidv7() : checkIdempotencyKey(options.idempotencyKey);
     const signal = options.signal;
@@ -135,14 +143,35 @@ export class Honk {
     }
   }
 
-  /** A `problem` for `groupKey` (opens or continues an incident). Severity defaults to `long` (error). */
-  problem(groupKey: string, title: string | null, message: string, options: HelperOptions = {}): Promise<SendResult> {
+  /** The old name of {@link Honk.honk}: same arguments, same request. */
+  send(message: Message, options: SendOptions = {}): Promise<SendResult> {
+    return this.honk(message, options);
+  }
+
+  /**
+   * Something broke: a `problem` for `groupKey` (opens or continues its incident). Severity
+   * defaults to `long` (error); `options.severity` overrides it.
+   */
+  uhoh(groupKey: string, title: string | null, message: string, options: HelperOptions = {}): Promise<SendResult> {
     return this.#helper({ ...options, severity: options.severity ?? 'error', groupKey, eventType: 'problem' }, title, message);
   }
 
-  /** A `recovery` for `groupKey` (closes its open incident). Severity defaults to `beep` (success). */
-  recovery(groupKey: string, title: string | null, message: string, options: HelperOptions = {}): Promise<SendResult> {
+  /**
+   * It works again: a `recovery` for `groupKey` (closes its open incident). Severity defaults to
+   * `beep` (success); `options.severity` overrides it.
+   */
+  phew(groupKey: string, title: string | null, message: string, options: HelperOptions = {}): Promise<SendResult> {
     return this.#helper({ ...options, severity: options.severity ?? 'success', groupKey, eventType: 'recovery' }, title, message);
+  }
+
+  /** The old name of {@link Honk.uhoh}: same arguments, same request. */
+  problem(groupKey: string, title: string | null, message: string, options: HelperOptions = {}): Promise<SendResult> {
+    return this.uhoh(groupKey, title, message, options);
+  }
+
+  /** The old name of {@link Honk.phew}: same arguments, same request. */
+  recovery(groupKey: string, title: string | null, message: string, options: HelperOptions = {}): Promise<SendResult> {
+    return this.phew(groupKey, title, message, options);
   }
 
   /** A light honk (severity info). */
@@ -201,6 +230,8 @@ export class Honk {
 
   #helper(options: HelperOptions, title: string | null, message: string): Promise<SendResult> {
     const { idempotencyKey, signal, ...fields } = options;
+    // Through send() (which calls honk()), as before 0.3.0: a test double that replaces
+    // either send or honk on an instance still sees every helper call.
     return this.send({ ...fields, title, message }, { idempotencyKey, signal });
   }
 

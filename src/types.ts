@@ -53,7 +53,7 @@ export function normalizeSeverity(value: string): Severity | undefined {
 /** Declared priority. `urgent` needs an ingestion key with `allow_urgent`. */
 export type Priority = 'low' | 'normal' | 'high' | 'urgent';
 
-/** `problem` opens an incident for its group; `recovery` closes it (both need `groupKey`). */
+/** `problem` opens an incident for its group (`uhoh()`); `recovery` closes it (`phew()`). Both need `groupKey`. */
 export type EventType = 'event' | 'problem' | 'recovery';
 
 /** Category taxonomy v1. */
@@ -166,7 +166,7 @@ export interface HonkOptions {
   timeoutMs?: number;
   /** Retries after the first attempt (network errors, 429 and 5xx only). Default 4. */
   retries?: number;
-  /** Total time budget for `send()`, waits included. Default 30000 ms. */
+  /** Total time budget for one `honk()` call, waits included. Default 30000 ms. */
   deadlineMs?: number;
   /** Applied to every message that does not set these fields. */
   defaults?: Defaults;
@@ -183,7 +183,7 @@ export interface HonkOptions {
 export interface SendOptions {
   /**
    * Stable key for this event (1–128 printable ASCII characters), e.g. `request-4812`. Reused on
-   * every retry. Default: a new UUIDv7 per `send()` call.
+   * every retry. Default: a new UUIDv7 per `honk()` call.
    */
   idempotencyKey?: string;
   /** Cancels the call (including retries and waits). */

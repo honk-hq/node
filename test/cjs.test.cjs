@@ -6,6 +6,7 @@ const honk = require('../dist/cjs/index.js');
 test('require("honk-me") works', async () => {
   assert.equal(typeof honk.Honk, 'function');
   assert.equal(typeof honk.HonkValidationError, 'function');
+  for (const name of ['honk', 'uhoh', 'phew', 'send', 'problem', 'recovery']) assert.equal(typeof honk.Honk.prototype[name], 'function', name);
   assert.equal(honk.VERSION, require('../package.json').version);
   const err = (() => {
     try {
