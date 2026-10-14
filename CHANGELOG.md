@@ -4,6 +4,19 @@ All notable changes to `honk-me` (npm) are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-10-14
+
+### Added
+- New names for the three main calls, with the same arguments and results:
+  `honk.honk(message, options)` (was `send`), `honk.uhoh(groupKey, title, message, options)`
+  (was `problem`) and `honk.phew(groupKey, title, message, options)` (was `recovery`).
+
+### Changed
+- `send()`, `problem()` and `recovery()` are now aliases of `honk()`, `uhoh()` and `phew()`.
+  They are not deprecated, print no warnings and send byte-for-byte the same request, so
+  existing code needs no change.
+- README and JSDoc use the new names. The package is still `honk-me` on npm.
+
 ## [0.2.0] - 2026-10-07
 
 ### Added

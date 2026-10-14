@@ -12,7 +12,7 @@ describe('integration (real server)', { skip }, () => {
   const honk = new Honk({ url: HONK_URL, key: HONK_KEY, defaults: { source: 'sdk-node-it', environment: 'test' } });
 
   test('minimal message is accepted', async () => {
-    const res = await honk.send({ message: `minimal ${run}` });
+    const res = await honk.honk({ message: `minimal ${run}` });
     assert.match(res.id, /^msg_/);
     assert.equal(res.duplicate, false);
     assert.ok(res.receivedAt instanceof Date && !Number.isNaN(res.receivedAt.getTime()));
@@ -38,8 +38,8 @@ describe('integration (real server)', { skip }, () => {
       sourceSequence: 1,
     };
     const key = `it-${await uuidv7()}`;
-    const first = await honk.send(msg, { idempotencyKey: key });
-    const again = await honk.send(msg, { idempotencyKey: key });
+    const first = await honk.honk(msg, { idempotencyKey: key });
+    const again = await honk.send(msg, { idempotencyKey: key }); // the old name: the very same request
     assert.equal(first.duplicate, false);
     assert.equal(again.duplicate, true);
     assert.equal(again.id, first.id);
@@ -77,11 +77,14 @@ describe('integration (real server)', { skip }, () => {
     });
   });
 
-  test('problem then recovery for one group', async () => {
+  test('uhoh then phew for one group; problem/recovery are the same requests', async () => {
     const group = `it/node/${run}`;
-    const p = await honk.problem(group, 'Backup failed', 'pg_dump exited with 1', { sourceSequence: 1 });
-    const r = await honk.recovery(group, 'Backup OK', 'pg_dump finished', { sourceSequence: 2 });
+    const p = await honk.uhoh(group, 'Backup failed', 'pg_dump exited with 1', { sourceSequence: 1, idempotencyKey: `${group}/p` });
+    const r = await honk.phew(group, 'Backup OK', 'pg_dump finished', { sourceSequence: 2, idempotencyKey: `${group}/r` });
     assert.notEqual(p.id, r.id);
+    const p2 = await honk.problem(group, 'Backup failed', 'pg_dump exited with 1', { sourceSequence: 1, idempotencyKey: `${group}/p` });
+    const r2 = await honk.recovery(group, 'Backup OK', 'pg_dump finished', { sourceSequence: 2, idempotencyKey: `${group}/r` });
+    assert.deepEqual([p2.id, p2.duplicate, r2.id, r2.duplicate], [p.id, true, r.id, true]);
   });
 
   test('a horn alias and its canonical severity are the same event', async () => {

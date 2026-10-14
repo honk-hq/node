@@ -6,6 +6,21 @@ const msg: Message = { message: 'x', severity: 'error', groupKey: 'g', metadata:
 const res: Promise<SendResult> = honk.send(msg, { idempotencyKey: 'k' });
 void res;
 void honk.problem('g', 't', 'm', { url: 'https://x', idempotencyKey: 'k' });
+const honked: Promise<SendResult> = honk.honk(msg, { idempotencyKey: 'k' });
+void honked;
+const uhoh: Promise<SendResult> = honk.uhoh('oven/kitchen', 'The cake is burning', 'Oven at 260 °C', { severity: 'blast', idempotencyKey: 'k' });
+const phew: Promise<SendResult> = honk.phew('oven/kitchen', null, 'Cake saved. Nobody needs to know.', { sourceSequence: 2 });
+void uhoh;
+void phew;
+// The old names keep the exact same signatures as the new ones.
+const sameSend: typeof honk.honk = honk.send;
+const sameProblem: typeof honk.uhoh = honk.problem;
+const sameRecovery: typeof honk.phew = honk.recovery;
+void sameSend;
+void sameProblem;
+void sameRecovery;
+// @ts-expect-error uhoh needs a group key, a title (or null) and a message
+void honk.uhoh('The cake is burning');
 const horns: Message[] = [{ message: 'x', severity: 'loud' }, { message: 'x', severity: 'BLAST' }, { message: 'x', severity: Severity.Long }];
 const canonical: Severity = Severity.Beep;
 void horns;

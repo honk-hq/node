@@ -22,8 +22,8 @@ try {
   if (!(e instanceof HonkValidationError)) fail(`expected HonkValidationError, got ${e}`);
 }
 try {
-  await honk.send({ message: 'x' });
-  fail('send to a closed port did not throw');
+  await honk.honk({ message: 'x' });
+  fail('honk to a closed port did not throw');
 } catch (e) {
   if (!(e instanceof HonkNetworkError) || e.attempts !== 2) fail(`expected HonkNetworkError after 2 attempts, got ${e}`);
 }

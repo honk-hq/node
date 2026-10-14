@@ -196,6 +196,91 @@ describe('the Honk scale (severity aliases)', () => {
   });
 });
 
+describe('honk, uhoh, phew (and their old names)', () => {
+  const sameRequest = (r) => ({ method: r.method, url: r.url, headers: r.headers, raw: r.raw });
+
+  test('honk/uhoh/phew set event type, group key and default severity', async () => {
+    const s = await server(ok());
+    const honk = new Honk({ url: s.url, key: KEY });
+    const res = await honk.honk({ title: 'Someone bought 3 rubber chickens', message: 'Order 1042', severity: 'beep' }, { idempotencyKey: 'order-1042' });
+    await honk.uhoh('oven/kitchen', 'The cake is burning', 'Oven at 260 °C', { channel: 'home', idempotencyKey: 'u-1' });
+    await honk.phew('oven/kitchen', 'Cake saved', 'Nobody needs to know.', { sourceSequence: 2 });
+    await honk.uhoh('oven/kitchen', null, 'Smoke everywhere', { severity: 'blast' });
+    await honk.phew('oven/kitchen', 'Fine', 'really', { severity: 'light' });
+    assert.equal(res.id, 'msg_01k6h3w4z5x6y7z8a9b0c1d2e3');
+    assert.deepEqual(s.requests[0].json, { title: 'Someone bought 3 rubber chickens', message: 'Order 1042', severity: 'success' });
+    assert.equal(s.requests[0].headers['idempotency-key'], 'order-1042');
+    assert.deepEqual(s.requests[1].json, { title: 'The cake is burning', message: 'Oven at 260 °C', severity: 'error', channel: 'home', group_key: 'oven/kitchen', event_type: 'problem' });
+    assert.equal(s.requests[1].headers['idempotency-key'], 'u-1');
+    assert.deepEqual(s.requests[2].json, { title: 'Cake saved', message: 'Nobody needs to know.', severity: 'success', group_key: 'oven/kitchen', event_type: 'recovery', source_sequence: 2 });
+    assert.deepEqual(s.requests[3].json, { message: 'Smoke everywhere', severity: 'critical', group_key: 'oven/kitchen', event_type: 'problem' });
+    assert.equal(s.requests[4].json.severity, 'info');
+  });
+
+  test('send/problem/recovery send exactly what honk/uhoh/phew send', async () => {
+    const s = await server(ok());
+    const honk = new Honk({ url: s.url, key: KEY, defaults: { source: 'oven-pi' } });
+    const msg = { title: 'Temperature', message: '180 °C', severity: 'loud', metadata: { celsius: 180 }, actions: [{ title: 'Call', url: 'tel:+15550134' }] };
+    const opts = { channel: 'home', priority: 'high', sourceSequence: 7, metadata: { oven: 'kitchen' } };
+    const pairs = [
+      [() => honk.honk(msg, { idempotencyKey: 'k-send' }), () => honk.send(msg, { idempotencyKey: 'k-send' })],
+      [() => honk.uhoh('oven/kitchen', 'The cake is burning', 'smoke', { ...opts, idempotencyKey: 'k-p' }), () => honk.problem('oven/kitchen', 'The cake is burning', 'smoke', { ...opts, idempotencyKey: 'k-p' })],
+      [() => honk.phew('oven/kitchen', 'Cake saved', 'Nobody needs to know.', { ...opts, idempotencyKey: 'k-r' }), () => honk.recovery('oven/kitchen', 'Cake saved', 'Nobody needs to know.', { ...opts, idempotencyKey: 'k-r' })],
+      [() => honk.uhoh('g', null, 'm', { severity: 'BLAST', idempotencyKey: 'k-o' }), () => honk.problem('g', null, 'm', { severity: 'BLAST', idempotencyKey: 'k-o' })],
+    ];
+    for (const [fresh, old] of pairs) {
+      const a = await fresh();
+      const b = await old();
+      assert.deepEqual(b, a);
+    }
+    assert.equal(s.requests.length, pairs.length * 2);
+    for (let i = 0; i < s.requests.length; i += 2) {
+      assert.deepEqual(sameRequest(s.requests[i + 1]), sameRequest(s.requests[i]), `pair ${i / 2}`);
+    }
+    assert.equal(s.requests[2].json.event_type, 'problem');
+    assert.equal(s.requests[4].json.event_type, 'recovery');
+  });
+
+  test('a test double on send or on honk sees every helper call', async () => {
+    for (const name of ['send', 'honk']) {
+      const honk = new Honk({ url: 'https://honk.example.com', key: KEY });
+      const calls = [];
+      honk[name] = async (message, options) => {
+        calls.push([message, options]);
+        return { id: 'msg_fake', duplicate: false, receivedAt: new Date(0) };
+      };
+      await honk.uhoh('oven/kitchen', 'The cake is burning', 'smoke', { idempotencyKey: 'k' });
+      await honk.problem('oven/kitchen', 'The cake is burning', 'smoke', { idempotencyKey: 'k' });
+      await honk.phew('oven/kitchen', 'Cake saved', 'Nobody needs to know.');
+      await honk.beep('Someone bought 3 rubber chickens', 'Order 1042');
+      assert.equal(calls.length, 4, name);
+      assert.deepEqual(calls[0], [{ title: 'The cake is burning', message: 'smoke', severity: 'error', groupKey: 'oven/kitchen', eventType: 'problem' }, { idempotencyKey: 'k', signal: undefined }]);
+      assert.deepEqual(calls[1], calls[0]);
+      assert.equal(calls[2][0].eventType, 'recovery');
+      assert.equal(calls[3][0].severity, 'success');
+    }
+  });
+
+  test('old and new names fail the same way, without warnings', async () => {
+    const warnings = [];
+    const onWarning = (w) => warnings.push(w);
+    process.on('warning', onWarning);
+    try {
+      const honk = new Honk({ url: 'https://honk.example.com', key: KEY });
+      for (const call of [() => honk.phew('', 't', 'm'), () => honk.recovery('', 't', 'm')]) {
+        await assert.rejects(call(), (e) => e instanceof HonkValidationError && e.local && e.fields[0].field === 'group_key');
+      }
+      for (const call of [() => honk.honk({}), () => honk.send({})]) {
+        await assert.rejects(call(), (e) => e instanceof HonkValidationError && e.fields[0].field === 'message');
+      }
+      await new Promise((r) => setImmediate(r));
+    } finally {
+      process.off('warning', onWarning);
+    }
+    assert.deepEqual(warnings, []);
+  });
+});
+
 describe('retries and idempotency', () => {
   test('retries 503 then succeeds, reusing the same Idempotency-Key and body', async () => {
     const s = await server([apiError(503, 'unavailable', {}, { 'retry-after': '0' }), apiError(500, 'internal'), ok()]);
