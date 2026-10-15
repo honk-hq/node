@@ -60,7 +60,7 @@ describe('serialisation', () => {
     assert.equal(r.headers.authorization, `Bearer ${KEY}`);
     assert.equal(r.headers['content-type'], 'application/json');
     assert.match(r.headers['idempotency-key'], UUIDV7);
-    assert.equal(r.headers['user-agent'], `honk-me-node/${VERSION}`);
+    assert.equal(r.headers['user-agent'], `honk-node/${VERSION}`);
     assert.deepEqual(r.json, {
       title: 'Redis connection failed',
       message: 'Billing API could not connect to Redis after 3 attempts.',

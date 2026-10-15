@@ -1,5 +1,5 @@
 // Compile-only checks of the public types (ESM consumer). Not executed.
-import { Honk, HonkError, HonkQuotaError, Severity, type Action, type Message, type SendResult } from 'honk-me';
+import { Honk, HonkError, HonkQuotaError, Severity, type Action, type Message, type SendResult } from 'honk-honk';
 
 const honk = new Honk({ url: 'https://honk.example.com', key: 'honk_x', defaults: { source: 'api' } });
 const msg: Message = { message: 'x', severity: 'error', groupKey: 'g', metadata: { a: 1, b: 'c', d: true } };

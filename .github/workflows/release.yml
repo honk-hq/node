@@ -1,4 +1,4 @@
-# Publishes honk-me to npm when a tag vX.Y.Z is pushed. The monorepo's sdk-mirror workflow
+# Publishes honk-honk to npm when a tag vX.Y.Z is pushed. The monorepo's sdk-mirror workflow
 # pushes that tag for a monorepo tag sdk-node-vX.Y.Z.
 #
 # Authentication is npm trusted publishing (OIDC): no token is stored. On npmjs.com the package

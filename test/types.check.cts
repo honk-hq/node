@@ -1,5 +1,5 @@
 // Compile-only check of the CommonJS types.
-import honk = require('honk-me');
+import honk = require('honk-honk');
 const client = new honk.Honk({ url: 'https://honk.example.com', key: 'honk_x' });
 void client.recovery('g', 't', 'm');
 void client.phew('g', 't', 'm');

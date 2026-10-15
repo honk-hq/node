@@ -78,7 +78,7 @@ export class Honk {
     const f = options.fetch ?? (globalThis as { fetch?: typeof fetch }).fetch;
     if (typeof f !== 'function') throw new TypeError('Honk: no fetch available; use Node 18+ or pass options.fetch');
     this.#fetch = f;
-    this.#userAgent = `honk-me-node/${VERSION}${options.userAgent ? ` ${options.userAgent}` : ''}`;
+    this.#userAgent = `honk-node/${VERSION}${options.userAgent ? ` ${options.userAgent}` : ''}`;
   }
 
   /**
