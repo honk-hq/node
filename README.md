@@ -266,7 +266,7 @@ workflow publishes to npm with provenance (see `CHANGELOG.md`).
 - From a shell, cron or CI: the `honk` CLI in [honk-go](https://github.com/honkhonk/go)
   (`honk uhoh backup/db-1 "Backup failed" "Exit code 1"`).
 - Other SDKs: [PHP / Laravel](https://github.com/honkhonk/php),
-  [Go + CLI](https://github.com/honkhonk/go), [Swift](https://github.com/honkhonk/swift),
+  [Go + CLI](https://github.com/honkhonk/go), [Swift](https://github.com/honkhonk/honk-swift),
   [Kotlin / Java](https://github.com/honkhonk/kotlin), [Rust](https://github.com/honkhonk/rust).
 - No code: [n8n node](https://github.com/honkhonk/n8n) (`n8n-nodes-honk`) and the
   [WordPress plugin](https://github.com/honkhonk/wordpress).
