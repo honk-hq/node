@@ -3,7 +3,7 @@
 [![CI](https://github.com/honk-me/honk-node/actions/workflows/ci.yml/badge.svg)](https://github.com/honk-me/honk-node/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/honk-me)](https://www.npmjs.com/package/honk-me)
 
-Official Node.js / TypeScript client for [Honk](https://honk-me.app), the inbox that turns
+Official Node.js / TypeScript client for [Honk](https://honk-honk.app), the inbox that turns
 events from your apps, scripts, cron jobs and CI into calm, grouped push notifications on your
 phone.
 
@@ -40,7 +40,7 @@ incident, and `honk` sends anything else. Until 0.3.0 these were `send()`, `prob
 npm install honk-me
 ```
 
-Create a project and an ingestion key at [honk-me.app](https://honk-me.app). Its
+Create a project and an ingestion key at [honk-honk.app](https://honk-honk.app). Its
 *Integrations* page generates ready-to-paste code for this package.
 
 ## Quick start
@@ -262,7 +262,7 @@ workflow publishes to npm with provenance (see `CHANGELOG.md`).
 
 ## Links
 
-- [honk-me.app](https://honk-me.app): the Honk inbox (web, iPhone, Apple Watch).
+- [honk-honk.app](https://honk-honk.app): the Honk inbox (web, iPhone, Apple Watch).
 - From a shell, cron or CI: the `honk` CLI in [honk-go](https://github.com/honk-me/honk-go)
   (`honk uhoh backup/db-1 "Backup failed" "Exit code 1"`).
 - Other SDKs: [PHP / Laravel](https://github.com/honk-me/honk-php),

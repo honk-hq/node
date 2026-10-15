@@ -1,7 +1,7 @@
 {
   "name": "honk-me",
   "version": "0.3.0",
-  "description": "Official Node.js/TypeScript client for Honk (honk-me.app): send events from apps, scripts and automations to your phone, with retries and idempotency built in.",
+  "description": "Official Node.js/TypeScript client for Honk (honk-honk.app): send events from apps, scripts and automations to your phone, with retries and idempotency built in.",
   "keywords": [
     "honk",
     "honk-me",
@@ -27,7 +27,7 @@
   "author": {
     "name": "Honk",
     "email": "accounts@honk-me.app",
-    "url": "https://honk-me.app"
+    "url": "https://honk-honk.app"
   },
   "sideEffects": false,
   "main": "./dist/cjs/index.js",
