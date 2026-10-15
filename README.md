@@ -1,6 +1,6 @@
 # honk-honk
 
-[![CI](https://github.com/honkhonk/node/actions/workflows/ci.yml/badge.svg)](https://github.com/honkhonk/node/actions/workflows/ci.yml)
+[![CI](https://github.com/honk-hq/node/actions/workflows/ci.yml/badge.svg)](https://github.com/honk-hq/node/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/honk-honk)](https://www.npmjs.com/package/honk-honk)
 
 Official Node.js / TypeScript client for [Honk](https://honk-honk.app), the inbox that turns
@@ -263,12 +263,12 @@ workflow publishes to npm with provenance (see `CHANGELOG.md`).
 ## Links
 
 - [honk-honk.app](https://honk-honk.app): the Honk inbox (web, iPhone, Apple Watch).
-- From a shell, cron or CI: the `honk` CLI in [honk-go](https://github.com/honkhonk/go)
+- From a shell, cron or CI: the `honk` CLI in [honk-go](https://github.com/honk-hq/go)
   (`honk uhoh backup/db-1 "Backup failed" "Exit code 1"`).
-- Other SDKs: [PHP / Laravel](https://github.com/honkhonk/php),
-  [Go + CLI](https://github.com/honkhonk/go), [Swift](https://github.com/honkhonk/honk-swift),
-  [Kotlin / Java](https://github.com/honkhonk/kotlin), [Rust](https://github.com/honkhonk/rust).
-- No code: [n8n node](https://github.com/honkhonk/n8n) (`n8n-nodes-honk`) and the
-  [WordPress plugin](https://github.com/honkhonk/wordpress).
+- Other SDKs: [PHP / Laravel](https://github.com/honk-hq/php),
+  [Go + CLI](https://github.com/honk-hq/go), [Swift](https://github.com/honk-hq/honk-swift),
+  [Kotlin / Java](https://github.com/honk-hq/kotlin), [Rust](https://github.com/honk-hq/rust).
+- No code: [n8n node](https://github.com/honk-hq/n8n) (`n8n-nodes-honk`) and the
+  [WordPress plugin](https://github.com/honk-hq/wordpress).
 
 MIT License.

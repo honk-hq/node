@@ -15,13 +15,13 @@
     "sdk",
     "typescript"
   ],
-  "homepage": "https://github.com/honkhonk/node#readme",
+  "homepage": "https://github.com/honk-hq/node#readme",
   "bugs": {
-    "url": "https://github.com/honkhonk/node/issues"
+    "url": "https://github.com/honk-hq/node/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/honkhonk/node.git"
+    "url": "git+https://github.com/honk-hq/node.git"
   },
   "license": "MIT",
   "author": {
