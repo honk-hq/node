@@ -92,7 +92,7 @@ export type MetadataValue = string | number | boolean;
  * taps the button.
  */
 export interface Action {
-  /** 1–40 characters (trimmed), one line, shown as sent: `Reply`, `Call Emily`. */
+  /** 1–40 characters (trimmed), one line, shown as sent: `Reply`, `Call Maria`. */
   title: string;
   /**
    * ≤ 2048 bytes, no spaces: `https://` (no credentials), `mailto:` with one address

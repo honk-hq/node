@@ -158,12 +158,12 @@ the order.
 ```js
 await honk.honk({
   title: 'New request: online shop quote',
-  message: 'Emily Carter (Acme) asked for a quote: online shop, 40 products',
+  message: 'Maria Tudor (Acme) asked for a quote: online shop, 40 products',
   category: 'customers',
   groupKey: 'requests/4812',
   actions: [
-    { title: 'Reply', url: 'mailto:emily@example.com?subject=Your%20quote' },
-    { title: 'Call Emily', url: 'tel:+15550134' },
+    { title: 'Reply', url: 'mailto:maria@example.com?subject=Your%20quote' },
+    { title: 'Call Maria', url: 'tel:+15550134' },
   ],
 });
 ```
