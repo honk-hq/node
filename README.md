@@ -3,7 +3,7 @@
 [![CI](https://github.com/honk-hq/node/actions/workflows/ci.yml/badge.svg)](https://github.com/honk-hq/node/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/honk-honk)](https://www.npmjs.com/package/honk-honk)
 
-Official Node.js / TypeScript client for [Honk](https://honk-honk.app), the inbox that turns
+Official Node.js / TypeScript client for [Honk! Honk!](https://honk-honk.app), the inbox that turns
 events from your apps, scripts, cron jobs and CI into calm, grouped push notifications on your
 phone.
 
@@ -29,7 +29,7 @@ incident, and `honk` sends anything else. Until 0.3.0 these were `send()`, `prob
 - Retries with backoff, `Retry-After`, a total deadline and an idempotency key on every send,
   so a retry never creates a duplicate.
 
-> **Keep the key on the server.** A Honk ingestion key (`honk_…`) lets anyone post into your
+> **Keep the key on the server.** A Honk! Honk! ingestion key (`honk_…`) lets anyone post into your
 > project. Use this package in back-end code, functions and scripts only. Never bundle it
 > into a browser, mobile or desktop front end, and never commit it. Read it from the
 > environment.
@@ -137,7 +137,7 @@ honk.honk(message, { idempotencyKey?, signal? }) // → Promise<{ id, duplicate,
 | `sourceSequence` | integer | 0 … 2^53-1, needs `groupKey`; a delayed recovery never closes a newer problem |
 
 Fields are camelCase in this SDK and sent with the API's snake_case names. `null`, `undefined`,
-empty optional strings and an empty `actions` array are omitted. A resolved promise means Honk **durably stored** the
+empty optional strings and an empty `actions` array are omitted. A resolved promise means Honk! Honk! **durably stored** the
 message (`202`); it does not mean a push was delivered or read.
 
 Helpers (the last argument takes any message field plus `idempotencyKey` and `signal`):
@@ -173,7 +173,7 @@ await honk.honk({
   address and optionally `?subject=…&body=…` (percent-encoded with `encodeURIComponent`, no
   other keys); `tel:` with a number (digits, `-` `.` `(` `)`, `+` only first); `sms:` with a
   number and optionally `?body=…`. Other schemes are refused.
-- Honk never opens or fetches them; the app does when you tap one. They appear on the
+- Honk! Honk! never opens or fetches them; the app does when you tap one. They appear on the
   message in the app and the web inbox, and on iPhone notifications that show the message
   text. Errors name the button: `actions[1].url`.
 
@@ -196,7 +196,7 @@ new Honk({
 ## Retries and idempotency, guaranteed
 
 - Every `honk()` (and every helper) carries an `Idempotency-Key`: yours, or a fresh UUIDv7. **The same key is
-  reused on every retry.** Within 24 h Honk answers a replay with the original id and
+  reused on every retry.** Within 24 h Honk! Honk! answers a replay with the original id and
   `duplicate: true`, so a lost response never creates a second message.
 - Only network errors, timeouts, `429` and `5xx` are retried, with exponential backoff and
   full jitter (`random(0, min(8 s, 0.5 s·2ⁿ))`), never sooner than the server's `Retry-After`.
@@ -262,7 +262,7 @@ workflow publishes to npm with provenance (see `CHANGELOG.md`).
 
 ## Links
 
-- [honk-honk.app](https://honk-honk.app): the Honk inbox (web, iPhone, Apple Watch).
+- [honk-honk.app](https://honk-honk.app): the Honk! Honk! inbox (web, iPhone, Apple Watch).
 - From a shell, cron or CI: the `honk` CLI in [honk-go](https://github.com/honk-hq/go)
   (`honk uhoh backup/db-1 "Backup failed" "Exit code 1"`).
 - Other SDKs: [PHP / Laravel](https://github.com/honk-hq/php),

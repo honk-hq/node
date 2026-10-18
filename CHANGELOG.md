@@ -4,6 +4,12 @@ All notable changes to `honk-honk` (npm) are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- The README and the npm description and author call the product Honk! Honk!; the package
+  and its API are unchanged.
+
 ## [0.4.0] - 2026-10-15
 
 ### Changed
