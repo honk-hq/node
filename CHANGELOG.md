@@ -6,6 +6,8 @@ All notable changes to `honk-honk` (npm) are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-18
+
 ### Changed
 - The README and the npm description and author call the product Honk! Honk!; the package
   and its API are unchanged.

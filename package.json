@@ -1,6 +1,6 @@
 {
   "name": "honk-honk",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Official Node.js/TypeScript client for Honk! Honk! (honk-honk.app): send events from apps, scripts and automations to your phone, with retries and idempotency built in.",
   "keywords": [
     "honk",
