@@ -174,27 +174,27 @@ export class Honk {
     return this.phew(groupKey, title, message, options);
   }
 
-  /** A light honk (severity info). */
+  /** A Light message (severity info). */
   light(title: string | null, message: string, options: HelperOptions = {}): Promise<SendResult> {
     return this.#severity('info', title, message, options);
   }
 
-  /** A beep-beep (severity success). */
+  /** A Beep message (severity success). */
   beep(title: string | null, message: string, options: HelperOptions = {}): Promise<SendResult> {
     return this.#severity('success', title, message, options);
   }
 
-  /** A loud honk (severity warning). */
+  /** A Loud message (severity warning). */
   loud(title: string | null, message: string, options: HelperOptions = {}): Promise<SendResult> {
     return this.#severity('warning', title, message, options);
   }
 
-  /** A long honk (severity error; pushes at least as high priority). */
+  /** A Long message (severity error; pushes at least as high priority). */
   long(title: string | null, message: string, options: HelperOptions = {}): Promise<SendResult> {
     return this.#severity('error', title, message, options);
   }
 
-  /** A blast (severity critical; pushes at least as high priority). */
+  /** A Blast message (severity critical; pushes at least as high priority). */
   blast(title: string | null, message: string, options: HelperOptions = {}): Promise<SendResult> {
     return this.#severity('critical', title, message, options);
   }

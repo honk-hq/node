@@ -58,15 +58,18 @@ await honk.beep('Backup finished', 'nightly pg_dump took 42 s');
 
 ## The Honk scale
 
-Every severity has a horn name. Use either; the SDK always sends the canonical value.
+Five levels. The Honk app shows them by their standard names (Info, Success, Warning, Error,
+Critical); people who prefer horn sounds can switch on the Honk names (Light, Beep, Loud, Long,
+Blast) with the "Honk names for levels" switch in Settings. The SDK takes both: the canonical values and the
+Honk names as input aliases, in any case, and always sends the canonical value.
 
-| Horn | Severity | Helper | Constant |
-|---|---|---|---|
-| light honk | `light` (info) | `honk.light(title, message, opts)` | `Severity.Light` |
-| beep-beep | `beep` (success) | `honk.beep(…)` | `Severity.Beep` |
-| loud honk | `loud` (warning) | `honk.loud(…)` | `Severity.Loud` |
-| long honk | `long` (error) | `honk.long(…)` | `Severity.Long` |
-| blast | `blast` (critical) | `honk.blast(…)` | `Severity.Blast` |
+| Level | Honk name | Severity | Helper | Constant |
+|---|---|---|---|---|
+| Info | Light | `light` (info) | `honk.light(title, message, opts)` | `Severity.Light` |
+| Success | Beep | `beep` (success) | `honk.beep(…)` | `Severity.Beep` |
+| Warning | Loud | `loud` (warning) | `honk.loud(…)` | `Severity.Loud` |
+| Error | Long | `long` (error) | `honk.long(…)` | `Severity.Long` |
+| Critical | Blast | `blast` (critical) | `honk.blast(…)` | `Severity.Blast` |
 
 `severity: 'loud'`, `'LOUD'` and `'warning'` are the same event (also for idempotency).
 `long` and `blast` push at least as `high` priority. `info()`, `success()`, `warning()`,
@@ -146,8 +149,8 @@ Helpers (the last argument takes any message field plus `idempotencyKey` and `si
 await honk.loud('Disk 91%', '/var on app-01', { groupKey: 'disk/app-01/var' });
 await honk.light('Deploy started', 'v4.2.0 to production', { channel: 'deploys' });
 await honk.beep(title, message, opts); await honk.long(title, message, opts); await honk.blast(title, message, opts);
-await honk.uhoh('db/backup', 'Backup failed', 'pg_dump exited with 1');   // event_type problem, a long honk by default
-await honk.phew('db/backup', 'Backup OK', 'pg_dump finished in 41 s');    // event_type recovery, a beep by default
+await honk.uhoh('db/backup', 'Backup failed', 'pg_dump exited with 1');   // event_type problem, a Long message by default
+await honk.phew('db/backup', 'Backup OK', 'pg_dump finished in 41 s');    // event_type recovery, a Beep message by default
 ```
 
 ### Buttons (actions)
