@@ -56,12 +56,41 @@ await honk.beep('Backup finished', 'nightly pg_dump took 42 s');
 `HONK_ENVIRONMENT` and `HONK_CHANNEL` defaults. CommonJS:
 `const { Honk } = require('honk-honk')`.
 
+## Sending
+
+```ts
+honk.honk(message, { idempotencyKey?, signal? }) // → Promise<{ id, duplicate, receivedAt, warnings }>
+```
+
+The essentials:
+
+| Field | Notes |
+|---|---|
+| `message` | the text; line breaks are kept |
+| `title` | one line; without it, the first line of `message`. A message needs a `message`, a `title` or both |
+| `severity` | the level (below). It alone decides how loudly the phone honks |
+| `groupKey` | messages with the same key form one group: the first pushes, repeats update it calmly. Without a key, messages group by their title |
+| `eventType` | `problem` opens an incident for the group, `recovery` closes it; `uhoh()` and `phew()` set it for you |
+
+Also accepted, and sent as the API's snake_case names: `priority`, `category`, `source`,
+`environment`, `channel` (the last three default to the client's `defaults`), `occurredAt`
+(a `Date` or an RFC 3339 string), `url`, `imageUrl`, `actions` (up to 3 buttons
+`{ title, url }`), `metadata`, `ttlSeconds` and `sourceSequence` (their types document them).
+
+The SDK does not check field contents. It sends what you give it, and the server **delivers
+first**: what is too long is shortened, an invalid optional value is left out, and the message is
+stored anyway. What it corrected comes back in `warnings` (see below). The SDK itself refuses
+only a message with neither a `message` nor a `title`, and a body over 16 KiB.
+
+A resolved promise means Honk! Honk! **durably stored** the message (`202`); it does not mean a
+push was delivered or read.
+
 ## The Honk scale
 
 Five levels. The Honk app shows them by their standard names (Info, Success, Warning, Error,
 Critical); people who prefer horn sounds can switch on the Honk names (Light, Beep, Loud, Long,
-Blast) with the "Honk names for levels" switch in Settings. The SDK takes both: the canonical values and the
-Honk names as input aliases, in any case, and always sends the canonical value.
+Blast) with the "Honk names for levels" switch in Settings. The SDK takes both, in any case, and
+sends the canonical value.
 
 | Level | Honk name | Severity | Helper | Constant |
 |---|---|---|---|---|
@@ -72,8 +101,42 @@ Honk names as input aliases, in any case, and always sends the canonical value.
 | Critical | Blast | `blast` (critical) | `honk.blast(…)` | `Severity.Blast` |
 
 `severity: 'loud'`, `'LOUD'` and `'warning'` are the same event (also for idempotency).
-`long` and `blast` push at least as `high` priority. `info()`, `success()`, `warning()`,
-`error()` and `critical()` remain as synonyms; `normalizeSeverity('Blast') === 'critical'`.
+`info()`, `success()`, `warning()`, `error()` and `critical()` remain as synonyms;
+`normalizeSeverity('Blast') === 'critical'`.
+
+## Problems and recoveries
+
+```js
+await honk.uhoh('db/backup', 'Backup failed', 'pg_dump exited with 1');   // event_type problem, a Long message by default
+await honk.phew('db/backup', 'Backup OK', 'pg_dump finished in 41 s');    // event_type recovery, a Beep message by default
+```
+
+`uhoh` opens an incident for its group key and pushes; repeats update the same notification
+calmly. `phew` closes it. The last argument of every helper takes any message field plus
+`idempotencyKey` and `signal`:
+
+```js
+await honk.loud('Disk 91%', '/var on app-01', { groupKey: 'disk/app-01/var' });
+await honk.light('Deploy started', 'v4.2.0 to production', { channel: 'deploys' });
+```
+
+## Warnings: what the server corrected
+
+```js
+const res = await honk.honk({ title: veryLongTitle, message: 'x', actions });
+res.warnings;
+// [{ field: 'title', code: 'truncated', message: '…' },
+//  { field: 'actions[1].url', code: 'ignored', message: '…' }]
+```
+
+Each warning has the wire `field` (`title`, `metadata.order`, `actions[1].url`), a `code`
+(`truncated`, `normalized`, `ignored`, `clamped`, `downgraded`, `hashed`) and an English
+`message`. They are never errors: the message was stored. They show what to fix in the code that
+sends it. To log them in one place, pass `onWarnings`:
+
+```js
+const honk = Honk.fromEnv({ onWarnings: (warnings, result) => console.warn(`honk ${result.id}:`, warnings) });
+```
 
 ## Recipe: notify me when a customer asks for something
 
@@ -90,14 +153,12 @@ export async function onCustomerRequest(req) {
   honk
     .honk(
       {
-        title: `New request: ${req.subject}`.slice(0, 160),
-        message: `${req.name} (${req.company}) asked: ${req.body}`.slice(0, 2000),
-        priority: 'high', // push right away
-        category: 'customers',
-        channel: 'requests',
+        title: `New request: ${req.subject}`,
+        message: `${req.name} (${req.company}) asked: ${req.body}`, // the server shortens what is too long
+        severity: 'loud',
         groupKey: `requests/${req.id}`, // one group per request
-        url: `https://shop.example.com/admin/requests/${req.id}`, // https only, shown as "Open link"
-        metadata: { request_id: String(req.id) },
+        url: `https://shop.example.com/admin/requests/${req.id}`, // shown as "Open link"
+        actions: [{ title: 'Reply', url: `mailto:${req.email}` }],
       },
       { idempotencyKey: `request-${req.id}` }, // same request, same key: never a duplicate
     )
@@ -108,79 +169,7 @@ export async function onCustomerRequest(req) {
 In a queue worker (BullMQ, SQS, …) `await` the call and let the job retry on
 `err.retryable`, keeping the same `idempotencyKey`.
 
-## Grouping in three lines
-
-Messages with the same `groupKey` (per project, environment, source and channel) form one
-group: the first one pushes, repeats update it calmly instead of buzzing again. Use one key
-per customer request (`requests/<id>`), and a shared key only for repeats of the same problem
-(`queue/failed-jobs`). `uhoh`/`phew` pairs need a `groupKey`.
-
-## Sending
-
-```ts
-honk.honk(message, { idempotencyKey?, signal? }) // → Promise<{ id, duplicate, receivedAt }>
-```
-
-| Field | Type | Notes |
-|---|---|---|
-| `message` | string | **required**, 1–8192 bytes UTF-8, line breaks allowed |
-| `title` | string | ≤ 160 chars, one line; default: first line of `message` |
-| `severity` | `light` `beep` `loud` `long` `blast` (or the canonical names, any case) | default `light`; `long`/`blast` push at least as `high` |
-| `priority` | `low` `normal` `high` `urgent` | default `normal`; `urgent` needs a key with *allow urgent* |
-| `category` | `infrastructure` `security` `backups` `deployments` `payments` `customers` `sales` `automation` `personal` `other` | |
-| `source` / `environment` / `channel` | string | ≤ 64 / 32 / 64 chars; default `api` / `default` / `general` or the client `defaults` |
-| `groupKey` | string | ≤ 128 chars |
-| `eventType` | `event` `problem` `recovery` | `recovery` needs `groupKey` |
-| `occurredAt` | `Date` or RFC 3339 string | informational |
-| `url` | string | `https://` only, no credentials |
-| `imageUrl` | string | `https://` only, no credentials or `#fragment`; fetched by the server afterwards |
-| `actions` | `{ title, url }[]` | up to 3 buttons, the first is the primary; see below |
-| `metadata` | `Record<string, string \| number \| boolean>` | ≤ 16 keys `[A-Za-z0-9_.-]{1,64}`, strings ≤ 512 chars |
-| `ttlSeconds` | integer | push lifetime 60–86400, default 3600 |
-| `sourceSequence` | integer | 0 … 2^53-1, needs `groupKey`; a delayed recovery never closes a newer problem |
-
-Fields are camelCase in this SDK and sent with the API's snake_case names. `null`, `undefined`,
-empty optional strings and an empty `actions` array are omitted. A resolved promise means Honk! Honk! **durably stored** the
-message (`202`); it does not mean a push was delivered or read.
-
-Helpers (the last argument takes any message field plus `idempotencyKey` and `signal`):
-
-```js
-await honk.loud('Disk 91%', '/var on app-01', { groupKey: 'disk/app-01/var' });
-await honk.light('Deploy started', 'v4.2.0 to production', { channel: 'deploys' });
-await honk.beep(title, message, opts); await honk.long(title, message, opts); await honk.blast(title, message, opts);
-await honk.uhoh('db/backup', 'Backup failed', 'pg_dump exited with 1');   // event_type problem, a Long message by default
-await honk.phew('db/backup', 'Backup OK', 'pg_dump finished in 41 s');    // event_type recovery, a Beep message by default
-```
-
-### Buttons (actions)
-
-Up to three buttons on the message, in display order: reply to the customer, call them, open
-the order.
-
-```js
-await honk.honk({
-  title: 'New request: online shop quote',
-  message: 'Maria Tudor (Acme) asked for a quote: online shop, 40 products',
-  category: 'customers',
-  groupKey: 'requests/4812',
-  actions: [
-    { title: 'Reply', url: 'mailto:maria@example.com?subject=Your%20quote' },
-    { title: 'Call Maria', url: 'tel:+15550134' },
-  ],
-});
-```
-
-- `title`: 1–40 characters, one line, shown as sent.
-- `url`, at most 2048 bytes without spaces: `https://` (no credentials); `mailto:` with one
-  address and optionally `?subject=…&body=…` (percent-encoded with `encodeURIComponent`, no
-  other keys); `tel:` with a number (digits, `-` `.` `(` `)`, `+` only first); `sms:` with a
-  number and optionally `?body=…`. Other schemes are refused.
-- Honk! Honk! never opens or fetches them; the app does when you tap one. They appear on the
-  message in the app and the web inbox, and on iPhone notifications that show the message
-  text. Errors name the button: `actions[1].url`.
-
-### Options
+## Options
 
 ```js
 new Honk({
@@ -190,7 +179,7 @@ new Honk({
   retries: 4,                     // after the first attempt
   deadlineMs: 30000,              // total, waits included
   defaults: { source: 'billing-api', environment: 'production', channel: 'payments' },
-  validate: true,                 // local checks before sending (the server always validates)
+  onWarnings: (warnings, result) => logger.warn({ id: result.id, warnings }),
   backoff: { baseMs: 500, maxMs: 8000 },
   fetch: customFetch,             // e.g. undici with a proxy agent
 });
@@ -215,12 +204,14 @@ new Honk({
 ## Errors
 
 Every error is a `HonkError` with `kind`, `status`, `code`, `requestId`, `idempotencyKey`,
-`attempts`, `retryAfter` and `retryable`.
+`attempts`, `retryAfter` and `retryable`. Its `message` carries the server's code, message, every
+field problem and the request id, e.g.
+`Honk 422 validation_failed: … (event_type: must be one of event, problem, recovery) [request req_01k6…]`.
 
 | Class | `kind` | When | What to do |
 |---|---|---|---|
-| `HonkValidationError` | `validation` | rejected locally (`local: true`) or `400`/`413`/`415`/`422`; `fields` lists every problem | fix the message |
-| `HonkAuthError` | `auth` | `401 invalid_key`, `403 priority_not_allowed`, `project_suspended`, `workspace_suspended` | fix the key or the priority |
+| `HonkValidationError` | `validation` | refused by the server (`400`/`413`/`415`/`422`: neither message nor title, an unknown top-level field, an invalid `eventType`, invalid JSON, over 16 KiB); `fields` names each problem. `local: true` when the SDK refused it before sending | fix the message |
+| `HonkAuthError` | `auth` | `401 invalid_key`, `403 project_suspended`, `workspace_suspended` | fix the key |
 | `HonkQuotaError` | `quota` | `429 quota_exceeded` (daily, resets at UTC midnight) or `rate_limited`, after retries | retry after `retryAfter` seconds |
 | `HonkConflictError` | `conflict` | `409 idempotency_conflict`: same key, different payload | use a new key, or send the original payload |
 | `HonkNetworkError` | `network` | unreachable on every attempt | retry later, same key |

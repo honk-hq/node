@@ -1,10 +1,14 @@
 // Compile-only checks of the public types (ESM consumer). Not executed.
-import { Honk, HonkError, HonkQuotaError, Severity, type Action, type Message, type SendResult } from 'honk-honk';
+import { Honk, HonkError, HonkQuotaError, Severity, type Action, type HonkWarning, type Message, type SendResult } from 'honk-honk';
 
 const honk = new Honk({ url: 'https://honk.example.com', key: 'honk_x', defaults: { source: 'api' } });
 const msg: Message = { message: 'x', severity: 'error', groupKey: 'g', metadata: { a: 1, b: 'c', d: true } };
 const res: Promise<SendResult> = honk.send(msg, { idempotencyKey: 'k' });
-void res;
+void res.then((r) => r.warnings.map((w: HonkWarning) => `${w.field} ${w.code}: ${w.message}`));
+const titleOnly: Message = { title: 'Backup finished' };
+void titleOnly;
+const logged = new Honk({ url: 'https://honk.example.com', key: 'honk_x', onWarnings: (warnings, result) => console.warn(result.id, warnings) });
+void logged;
 void honk.problem('g', 't', 'm', { url: 'https://x', idempotencyKey: 'k' });
 const honked: Promise<SendResult> = honk.honk(msg, { idempotencyKey: 'k' });
 void honked;

@@ -1,6 +1,6 @@
 /**
- * Canonical severity, lowest to highest. `error` and `critical` raise the effective priority to
- * at least `high`. Inputs also accept the horn aliases of the Honk scale ({@link SeverityAlias}).
+ * Canonical severity (the level), lowest to highest. The level alone decides how loudly a push
+ * interrupts. Inputs also accept the horn aliases of the Honk scale ({@link SeverityAlias}).
  */
 export type Severity = 'info' | 'success' | 'warning' | 'error' | 'critical';
 
@@ -50,10 +50,10 @@ export function normalizeSeverity(value: string): Severity | undefined {
   return (SEVERITY_ALIASES as Record<string, Severity>)[v];
 }
 
-/** Declared priority. `urgent` needs an ingestion key with `allow_urgent`. */
+/** Declared priority. `urgent` from a key without `allow_urgent` is lowered to `high` (a `downgraded` warning). */
 export type Priority = 'low' | 'normal' | 'high' | 'urgent';
 
-/** `problem` opens an incident for its group (`uhoh()`); `recovery` closes it (`phew()`). Both need `groupKey`. */
+/** `problem` opens an incident for its group (`uhoh()`); `recovery` closes it (`phew()`). */
 export type EventType = 'event' | 'problem' | 'recovery';
 
 /** Category taxonomy v1. */
@@ -89,65 +89,79 @@ export type MetadataValue = string | number | boolean;
 
 /**
  * A button on the message. Honk never opens or fetches the URL; the app opens it when the user
- * taps the button.
+ * taps the button. The server leaves out an invalid button (an `ignored` warning) and keeps the
+ * others.
  */
 export interface Action {
-  /** 1–40 characters (trimmed), one line, shown as sent: `Reply`, `Call Maria`. */
+  /** One line, up to 40 characters: `Reply`, `Call Maria`. */
   title: string;
-  /**
-   * ≤ 2048 bytes, no spaces: `https://` (no credentials), `mailto:` with one address
-   * (`?subject=…&body=…` percent-encoded, no other keys), `tel:` or `sms:` with a number
-   * (`sms:` also `?body=…`). Other schemes are refused.
-   */
+  /** `https://`, `mailto:`, `tel:` or `sms:`. */
   url: string;
 }
 
 /**
- * One event for `POST /v1/messages`. Only `message` is required. Fields are camelCase here and
- * sent as the snake_case names of the API (`groupKey` → `group_key`). Empty optional strings
- * and `null`/`undefined` are omitted.
+ * One event for `POST /v1/messages`: a `message`, a `title` or both. Fields are camelCase here
+ * and sent as the snake_case names of the API (`groupKey` → `group_key`). Empty optional strings
+ * and `null`/`undefined` are omitted. The server shortens or leaves out what does not fit and
+ * says so in {@link SendResult.warnings}; it never refuses a message for an optional field.
  */
 export interface Message {
-  /** Plain text, 1–8192 bytes of UTF-8. Line breaks and tabs are allowed. */
-  message: string;
-  /** ≤ 160 characters, one line. Defaults to the first line of `message`. */
+  /** Plain text; line breaks and tabs are kept. Longer than 8192 bytes is shortened. */
+  message?: string | null;
+  /** One line, up to 160 characters. Without it, the first line of `message`. */
   title?: string | null;
   /**
    * Default `light` (info). Horn names or canonical values, case-insensitive: `light`/`info`,
    * `beep`/`success`, `loud`/`warning`, `long`/`error`, `blast`/`critical`. Sent canonical.
    */
   severity?: SeverityInput | null;
-  /** Default `normal`. */
+  /** Default `normal`. The level, not the priority, decides how loudly a push interrupts. */
   priority?: Priority | null;
   category?: Category | null;
-  /** ≤ 64 characters. Default `api` (or the client's `defaults.source`). */
+  /** Default `api` (or the client's `defaults.source`). */
   source?: string | null;
-  /** ≤ 32 characters. Default `default` (or the client's `defaults.environment`). */
+  /** Default `default` (or the client's `defaults.environment`). */
   environment?: string | null;
-  /** ≤ 64 characters. Default `general` (or the client's `defaults.channel`). */
+  /** Default `general` (or the client's `defaults.channel`). */
   channel?: string | null;
   /**
-   * ≤ 128 characters. Messages with the same key (per environment, source and channel) form one
-   * group: one push, then calm updates. Use one key per customer request (`requests/<id>`), a
-   * shared key only for repeats of the same problem.
+   * Messages with the same key (per environment, source and channel) form one group: one push,
+   * then calm updates. Without a key, messages group by their title. Use one key per customer
+   * request (`requests/<id>`), a shared key only for repeats of the same problem.
    */
   groupKey?: string | null;
-  /** Default `event`. `recovery` requires `groupKey`. */
+  /** Default `event`. */
   eventType?: EventType | null;
   /** When it happened at the source (informational). A Date or an RFC 3339 string. */
   occurredAt?: Date | string | null;
-  /** HTTPS link shown as "Open link". No credentials. ≤ 2048 bytes. */
+  /** HTTPS link shown as "Open link". */
   url?: string | null;
-  /** HTTPS image fetched by the server after ingestion. No credentials or fragment. ≤ 2048 bytes. */
+  /** HTTPS image fetched by the server after ingestion. */
   imageUrl?: string | null;
   /** Up to 3 buttons, in display order (the first is the primary). Empty means none. */
   actions?: readonly Action[] | null;
-  /** ≤ 16 keys matching `[A-Za-z0-9_.-]{1,64}`; values are strings (≤ 512 chars), numbers or booleans. */
+  /** Up to 16 keys; values are strings, numbers or booleans. */
   metadata?: Record<string, MetadataValue> | null;
   /** Push lifetime, 60–86400 seconds. Default 3600. */
   ttlSeconds?: number | null;
-  /** Monotonic counter per source stream (0 … 2^53-1) for problem/recovery ordering. Requires `groupKey`. */
+  /** Monotonic counter per source stream (0 … 2^53-1): a delayed recovery never closes a newer problem. */
   sourceSequence?: number | null;
+}
+
+/** What the server corrected in an accepted message (`warnings[]` of the `202`). */
+export type WarningCode = 'truncated' | 'normalized' | 'ignored' | 'clamped' | 'downgraded' | 'hashed';
+
+/**
+ * One correction the server made to an accepted message. Warnings are never errors: the message
+ * was stored. They tell you what to fix in the code that sends it.
+ */
+export interface HonkWarning {
+  /** Wire name: `title`, `metadata.order`, `actions[1].url`, … */
+  field: string;
+  /** `truncated`, `normalized`, `ignored`, `clamped`, `downgraded`, `hashed` (newer servers may add codes). */
+  code: WarningCode | (string & {});
+  /** English, for logs: what was wrong and what was done. */
+  message: string;
 }
 
 /** Values applied when a message leaves the field unset. */
@@ -170,7 +184,12 @@ export interface HonkOptions {
   deadlineMs?: number;
   /** Applied to every message that does not set these fields. */
   defaults?: Defaults;
-  /** Validate messages locally before sending. Default `true`. The server always validates. */
+  /**
+   * Called after a send the server accepted with corrections (`result.warnings` is not empty),
+   * e.g. `(warnings) => console.warn('honk:', warnings)`. An exception thrown here is ignored.
+   */
+  onWarnings?: (warnings: HonkWarning[], result: SendResult) => void;
+  /** @deprecated Since 0.5.0 the SDK no longer checks fields; the server corrects them and returns `warnings`. Ignored. */
   validate?: boolean;
   /** Exponential backoff with full jitter: attempt n waits random(0, min(maxMs, baseMs·2ⁿ)). Default 500 / 8000 ms. */
   backoff?: { baseMs?: number; maxMs?: number };
@@ -200,4 +219,6 @@ export interface SendResult {
   duplicate: boolean;
   /** When the server accepted the message (the first time, for a duplicate). */
   receivedAt: Date;
+  /** What the server corrected (shortened, left out, lowered…); `[]` when nothing. */
+  warnings: HonkWarning[];
 }

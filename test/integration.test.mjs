@@ -100,37 +100,34 @@ describe('integration (real server)', { skip }, () => {
     await assert.rejects(bad.send({ message: 'x' }), (e) => e instanceof HonkAuthError && e.code === 'invalid_key' && e.status === 401);
   });
 
-  test('urgent without allow_urgent is HonkAuthError priority_not_allowed (or accepted when the key allows it)', async () => {
-    try {
-      const res = await honk.send({ message: `urgent ${run}`, priority: 'urgent' });
-      assert.match(res.id, /^msg_/);
-    } catch (e) {
-      assert.ok(e instanceof HonkAuthError, String(e));
-      assert.equal(e.code, 'priority_not_allowed');
-      assert.equal(e.status, 403);
-    }
+  test('urgent from a key without allow_urgent is accepted, lowered to high with a downgraded warning', async () => {
+    const res = await honk.send({ message: `urgent ${run}`, priority: 'urgent' });
+    assert.match(res.id, /^msg_/);
+    const downgraded = res.warnings.filter((w) => w.field === 'priority');
+    // A key with allow_urgent keeps urgent and has no warning.
+    if (downgraded.length > 0) assert.equal(downgraded[0].code, 'downgraded');
   });
 
-  test('server-side validation maps to HonkValidationError with fields', async () => {
-    const raw = new Honk({ url: HONK_URL, key: HONK_KEY, validate: false });
-    await assert.rejects(raw.send({ message: 'x', severity: 'fatal', ttlSeconds: 5 }), (e) => {
+  test('what the server corrects comes back as warnings, not errors', async () => {
+    const seen = [];
+    const client = new Honk({ url: HONK_URL, key: HONK_KEY, onWarnings: (w) => seen.push(...w) });
+    const actions = [{ title: 'Call', url: 'tel:+15550134' }, { title: 'Run', url: 'javascript:alert(1)' }];
+    const res = await client.send({ message: `corrected ${run}`, title: 't'.repeat(200), severity: 'fatal', ttlSeconds: 5, actions });
+    assert.match(res.id, /^msg_/);
+    const got = res.warnings.map((w) => `${w.field}:${w.code}`);
+    for (const want of ['title:truncated', 'ttl_seconds:clamped', 'actions[1].url:ignored']) assert.ok(got.includes(want), `${want} in ${got}`);
+    assert.ok(res.warnings.some((w) => w.field === 'severity'), `a severity warning in ${got}`);
+    assert.deepEqual(seen, res.warnings);
+  });
+
+  test('neither message nor title is refused locally; an unknown event type by the server', async () => {
+    await assert.rejects(honk.send({ message: ' ' }), (e) => e instanceof HonkValidationError && e.local === true);
+    await assert.rejects(honk.send({ message: 'x', eventType: 'incident' }), (e) => {
       assert.ok(e instanceof HonkValidationError);
       assert.equal(e.local, false);
       assert.equal(e.status, 422);
-      assert.equal(e.code, 'validation_failed');
-      const fields = e.fields.map((f) => `${f.field}:${f.code}`).sort();
-      assert.deepEqual(fields, ['severity:invalid_enum', 'ttl_seconds:out_of_range']);
-      return true;
-    });
-  });
-
-  test('server-side action validation names the action', async () => {
-    const raw = new Honk({ url: HONK_URL, key: HONK_KEY, validate: false });
-    const actions = [{ title: 'Call', url: 'tel:+15550134' }, { title: 'Run', url: 'javascript:alert(1)' }];
-    await assert.rejects(raw.send({ message: 'x', actions }), (e) => {
-      assert.ok(e instanceof HonkValidationError);
-      assert.equal(e.status, 422);
-      assert.deepEqual(e.fields.map((f) => `${f.field}:${f.code}`), ['actions[1].url:invalid_format']);
+      assert.deepEqual(e.fields.map((f) => `${f.field}:${f.code}`), ['event_type:invalid_enum']);
+      assert.match(e.requestId, /^req_/);
       return true;
     });
   });

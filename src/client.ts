@@ -10,9 +10,9 @@ import {
   type FieldError,
   type HonkErrorInit,
 } from './errors.js';
-import type { Defaults, HelperOptions, HonkOptions, Message, SendOptions, SendResult, Severity } from './types.js';
+import type { Defaults, HelperOptions, HonkOptions, HonkWarning, Message, SendOptions, SendResult, Severity } from './types.js';
 import { uuidv7 } from './uuid.js';
-import { buildBody, checkIdempotencyKey } from './validate.js';
+import { buildBody, checkIdempotencyKey } from './body.js';
 import { VERSION } from './version.js';
 
 export { VERSION };
@@ -56,8 +56,8 @@ export class Honk {
   readonly retries: number;
   readonly deadlineMs: number;
   readonly defaults: Readonly<Defaults>;
-  readonly validate: boolean;
   readonly #key: string;
+  readonly #onWarnings?: HonkOptions['onWarnings'];
   readonly #fetch: typeof fetch;
   readonly #backoffBase: number;
   readonly #backoffMax: number;
@@ -74,7 +74,8 @@ export class Honk {
     this.#backoffBase = positive(options.backoff?.baseMs, DEFAULT_BACKOFF_BASE_MS, 'backoff.baseMs');
     this.#backoffMax = positive(options.backoff?.maxMs, DEFAULT_BACKOFF_MAX_MS, 'backoff.maxMs');
     this.defaults = Object.freeze({ ...(options.defaults ?? {}) });
-    this.validate = options.validate ?? true;
+    if (options.onWarnings !== undefined && typeof options.onWarnings !== 'function') throw new TypeError('Honk: onWarnings must be a function');
+    this.#onWarnings = options.onWarnings;
     const f = options.fetch ?? (globalThis as { fetch?: typeof fetch }).fetch;
     if (typeof f !== 'function') throw new TypeError('Honk: no fetch available; use Node 18+ or pass options.fetch');
     this.#fetch = f;
@@ -108,15 +109,16 @@ export class Honk {
 
   /**
    * Sends one event. Resolves once Honk has durably stored it (`202`), which does not mean a push
-   * was delivered. Retries network errors, 429 and 5xx with the same Idempotency-Key until
-   * `retries` or `deadlineMs` runs out, then throws a {@link HonkError}.
+   * was delivered; `result.warnings` lists what the server corrected. Retries network errors, 429
+   * and 5xx with the same Idempotency-Key until `retries` or `deadlineMs` runs out, then throws a
+   * {@link HonkError}.
    *
    * ```ts
    * await honk.honk({ title: 'Someone bought 3 rubber chickens', message: 'Order 1042, €2.97', severity: 'beep' });
    * ```
    */
   async honk(message: Message, options: SendOptions = {}): Promise<SendResult> {
-    const body = JSON.stringify(buildBody(message, this.defaults, this.validate));
+    const body = JSON.stringify(buildBody(message, this.defaults));
     const idempotencyKey = options.idempotencyKey === undefined ? await uuidv7() : checkIdempotencyKey(options.idempotencyKey);
     const signal = options.signal;
     const started = Date.now();
@@ -127,7 +129,7 @@ export class Honk {
       let failure: HonkError;
       try {
         const res = await this.#post(body, idempotencyKey, Math.max(1, Math.min(this.timeoutMs, deadline - Date.now())), signal);
-        if (res.status >= 200 && res.status < 300) return accepted(res, idempotencyKey, attempt);
+        if (res.status >= 200 && res.status < 300) return this.#accepted(res, idempotencyKey, attempt);
         failure = errorFor(res, idempotencyKey, attempt);
         if (!(failure instanceof HonkQuotaError || failure instanceof HonkServerError)) throw failure;
       } catch (err) {
@@ -235,6 +237,18 @@ export class Honk {
     return this.send({ ...fields, title, message }, { idempotencyKey, signal });
   }
 
+  #accepted(res: RawResponse, idempotencyKey: string, attempts: number): SendResult {
+    const result = accepted(res, idempotencyKey, attempts);
+    if (result.warnings.length > 0 && this.#onWarnings) {
+      try {
+        this.#onWarnings(result.warnings, result);
+      } catch {
+        // The message was stored; a failing log hook must not turn that into an error.
+      }
+    }
+    return result;
+  }
+
   async #post(body: string, idempotencyKey: string, timeoutMs: number, signal?: AbortSignal): Promise<RawResponse> {
     const controller = new AbortController();
     const timeout = new TimeoutSignal();
@@ -280,12 +294,20 @@ class TimeoutSignalError extends Error {
 }
 
 function accepted(res: RawResponse, idempotencyKey: string, attempts: number): SendResult {
-  const data = parseJson(res.text) as { id?: unknown; duplicate?: unknown; received_at?: unknown } | undefined;
+  const data = parseJson(res.text) as { id?: unknown; duplicate?: unknown; received_at?: unknown; warnings?: unknown } | undefined;
   if (!data || typeof data.id !== 'string') {
     throw new HonkError(`Honk answered ${res.status} without a message id`, { status: res.status, idempotencyKey, attempts, body: data ?? res.text });
   }
   const receivedAt = typeof data.received_at === 'string' ? new Date(data.received_at) : new Date(Number.NaN);
-  return { id: data.id, duplicate: data.duplicate === true, receivedAt };
+  return { id: data.id, duplicate: data.duplicate === true, receivedAt, warnings: parseWarnings(data.warnings) };
+}
+
+/** The `warnings` of a `202`, as sent (an older server sends none). */
+function parseWarnings(raw: unknown): HonkWarning[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((w): w is Record<string, unknown> => w !== null && typeof w === 'object')
+    .map((w) => ({ field: String(w.field ?? ''), code: String(w.code ?? ''), message: String(w.message ?? '') }));
 }
 
 function errorFor(res: RawResponse, idempotencyKey: string, attempts: number): HonkError {
@@ -305,12 +327,10 @@ function errorFor(res: RawResponse, idempotencyKey: string, attempts: number): H
     body: data ?? (res.text || undefined),
   };
   const s = res.status;
-  const label = `Honk ${s}${code ? ` ${code}` : ''}: ${detail}`;
-  if (s === 400 || s === 413 || s === 415 || s === 422) {
-    const fields = Array.isArray(e?.fields) ? (e.fields as FieldError[]) : [];
-    const list = fields.map((f) => `${f.field} ${f.message ?? f.code}`).join('; ');
-    return new HonkValidationError(list ? `${label} (${list})` : label, { ...init, fields });
-  }
+  const fields = Array.isArray(e?.fields) ? (e.fields as FieldError[]) : [];
+  const list = fields.map((f) => `${f.field}: ${f.message || f.code}`).join('; ');
+  const label = `Honk ${s}${code ? ` ${code}` : ''}: ${detail}${list ? ` (${list})` : ''}${init.requestId ? ` [request ${init.requestId}]` : ''}`;
+  if (s === 400 || s === 413 || s === 415 || s === 422) return new HonkValidationError(label, { ...init, fields });
   if (s === 401 || s === 403) return new HonkAuthError(label, init);
   if (s === 409) return new HonkConflictError(label, init);
   if (s === 429) return new HonkQuotaError(label, init);

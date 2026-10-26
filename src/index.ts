@@ -11,7 +11,7 @@ export {
   type ErrorKind,
   type FieldError,
 } from './errors.js';
-export { buildBody, LIMITS } from './validate.js';
+export { buildBody, LIMITS } from './body.js';
 export { uuidv7 } from './uuid.js';
 export {
   Severity,
@@ -34,4 +34,6 @@ export {
   type SendOptions,
   type HelperOptions,
   type SendResult,
+  type HonkWarning,
+  type WarningCode,
 } from './types.js';

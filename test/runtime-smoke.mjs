@@ -1,6 +1,6 @@
 // Runtime smoke test for Bun and Deno (CI): `bun test/runtime-smoke.mjs`,
 // `deno run --allow-net --allow-read test/runtime-smoke.mjs`. Exercises construction,
-// validation, UUIDv7 (Web Crypto) and the fetch/error path without a server.
+// the message-or-title check, UUIDv7 (Web Crypto) and the fetch/error path without a server.
 import { Honk, HonkNetworkError, HonkValidationError, buildBody, uuidv7 } from '../dist/esm/index.js';
 
 const fail = (msg) => {
@@ -16,8 +16,8 @@ if (body.group_key !== 'g' || body.occurred_at !== '1970-01-01T00:00:00.000Z') f
 
 const honk = new Honk({ url: 'http://127.0.0.1:9', key: 'honk_smoke', retries: 1, backoff: { baseMs: 1 } });
 try {
-  await honk.send({ message: 'x', severity: 'fatal' });
-  fail('validation did not throw');
+  await honk.send({ message: ' ', title: null });
+  fail('a message without text did not throw');
 } catch (e) {
   if (!(e instanceof HonkValidationError)) fail(`expected HonkValidationError, got ${e}`);
 }

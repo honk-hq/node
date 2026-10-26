@@ -12,7 +12,7 @@ export type ErrorKind =
 export interface FieldError {
   /** Wire name, e.g. `group_key`, `metadata.region`, `Idempotency-Key`, `body`. */
   field: string;
-  /** `required`, `too_long`, `too_short`, `invalid_enum`, `invalid_format`, `out_of_range`, `not_allowed`, `requires_group_key`, … */
+  /** `required`, `too_long`, `invalid_enum`, `invalid_format`, `not_allowed`, `invalid_utf8`, … */
   code: string;
   message?: string;
 }
@@ -68,7 +68,10 @@ export class HonkError extends Error {
   }
 }
 
-/** The message is invalid: rejected locally before sending, or by the server (400, 413, 415, 422). Fix the message. */
+/**
+ * The message was refused: by the server (400, 413, 415, 422: `fields` names each problem), or
+ * before sending (`local: true`) when it has neither a message nor a title or is over 16 KiB.
+ */
 export class HonkValidationError extends HonkError {
   override readonly kind = 'validation' as const;
   readonly fields: FieldError[];
@@ -82,7 +85,7 @@ export class HonkValidationError extends HonkError {
   }
 }
 
-/** 401/403: invalid or revoked key, `priority_not_allowed` (urgent without allow_urgent), suspended project/workspace. */
+/** 401/403: invalid or revoked key, suspended project or workspace. */
 export class HonkAuthError extends HonkError {
   override readonly kind = 'auth' as const;
   constructor(message: string, init: HonkErrorInit = {}) {

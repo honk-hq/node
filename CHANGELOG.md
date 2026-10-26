@@ -6,6 +6,36 @@ All notable changes to `honk-honk` (npm) are documented here. The format follows
 
 ## [Unreleased]
 
+The SDK is now a thin wrapper: the server "delivers first" (it corrects what it can and accepts
+the message), so the SDK no longer second-guesses it.
+
+### Added
+- `SendResult.warnings`: what the server corrected in an accepted message, as
+  `{ field, code, message }` (`HonkWarning`; codes `truncated`, `normalized`, `ignored`,
+  `clamped`, `downgraded`, `hashed`). `[]` when nothing, and from servers that send none.
+- `onWarnings(warnings, result)` option: called after every send the server accepted with
+  corrections, for logging in one place. An exception thrown in it is ignored.
+- A message may have only a `title` (`message` is now optional in `Message`); one of the two is
+  required.
+
+### Changed
+- Error messages name the server's code and message, every field problem and the request id:
+  `Honk 422 validation_failed: … (event_type: must be one of …) [request req_…]`.
+- Keys of a message object that the SDK does not know are sent as given, for the server to
+  judge (it answers `422 unknown_field`), instead of being refused locally.
+- An invalid `Date` in `occurredAt` is sent as is (the server leaves it out with a warning)
+  instead of being refused.
+
+### Removed
+- Local checks of field contents: lengths, control characters, enums, URLs, actions, metadata,
+  `ttlSeconds`, `sourceSequence` and the group-key rules. The SDK refuses only a message with
+  neither a message nor a title, a body over 16 KiB and an invalid `Idempotency-Key` (a header
+  `fetch` could not send).
+- The `validate` option is accepted and ignored (deprecated), and `Honk#validate` is gone.
+- `LIMITS` keeps only `bodyBytes` and `idempotencyKey`.
+- `priority_not_allowed` is no longer documented: the server lowers `urgent` to `high` with a
+  `downgraded` warning instead.
+
 ## [0.4.1] - 2026-10-18
 
 ### Changed

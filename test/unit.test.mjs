@@ -53,7 +53,7 @@ describe('serialisation', () => {
       ttlSeconds: 3600,
       sourceSequence: 42,
     });
-    assert.deepEqual(res, { id: 'msg_01k6h3w4z5x6y7z8a9b0c1d2e3', duplicate: false, receivedAt: new Date('2026-10-02T21:10:00.123Z') });
+    assert.deepEqual(res, { id: 'msg_01k6h3w4z5x6y7z8a9b0c1d2e3', duplicate: false, receivedAt: new Date('2026-10-02T21:10:00.123Z'), warnings: [] });
     const [r] = s.requests;
     assert.equal(r.method, 'POST');
     assert.equal(r.url, '/v1/messages');
@@ -173,13 +173,9 @@ describe('the Honk scale (severity aliases)', () => {
     assert.deepEqual(s.requests.map((r) => r.raw), Array(3).fill('{"message":"x","severity":"warning"}'));
   });
 
-  test('aliases are normalized even with validate:false; unknown values pass through', () => {
-    assert.equal(buildBody({ message: 'x', severity: 'BLAST' }, {}, false).severity, 'critical');
-    assert.equal(buildBody({ message: 'x', severity: 'fatal' }, {}, false).severity, 'fatal');
-  });
-
-  test('unknown severities name the horn scale', () => {
-    assert.throws(() => buildBody({ message: 'x', severity: 'fatal' }), /severity must be one of light \(info\), beep \(success\), loud \(warning\), long \(error\), blast \(critical\)/);
+  test('aliases are sent canonical; unknown values go to the server as given', () => {
+    assert.equal(buildBody({ message: 'x', severity: 'BLAST' }).severity, 'critical');
+    assert.equal(buildBody({ message: 'x', severity: 'fatal' }).severity, 'fatal');
   });
 
   test('horn helpers', async () => {
@@ -247,7 +243,7 @@ describe('honk, uhoh, phew (and their old names)', () => {
       const calls = [];
       honk[name] = async (message, options) => {
         calls.push([message, options]);
-        return { id: 'msg_fake', duplicate: false, receivedAt: new Date(0) };
+        return { id: 'msg_fake', duplicate: false, receivedAt: new Date(0), warnings: [] };
       };
       await honk.uhoh('oven/kitchen', 'The cake is burning', 'smoke', { idempotencyKey: 'k' });
       await honk.problem('oven/kitchen', 'The cake is burning', 'smoke', { idempotencyKey: 'k' });
@@ -261,14 +257,14 @@ describe('honk, uhoh, phew (and their old names)', () => {
     }
   });
 
-  test('old and new names fail the same way, without warnings', async () => {
+  test('old and new names fail the same way, without process warnings', async () => {
     const warnings = [];
     const onWarning = (w) => warnings.push(w);
     process.on('warning', onWarning);
     try {
       const honk = new Honk({ url: 'https://honk.example.com', key: KEY });
-      for (const call of [() => honk.phew('', 't', 'm'), () => honk.recovery('', 't', 'm')]) {
-        await assert.rejects(call(), (e) => e instanceof HonkValidationError && e.local && e.fields[0].field === 'group_key');
+      for (const call of [() => honk.phew('g', null, ''), () => honk.recovery('g', null, '')]) {
+        await assert.rejects(call(), (e) => e instanceof HonkValidationError && e.local && e.fields[0].field === 'message');
       }
       for (const call of [() => honk.honk({}), () => honk.send({})]) {
         await assert.rejects(call(), (e) => e instanceof HonkValidationError && e.fields[0].field === 'message');
@@ -402,7 +398,6 @@ describe('error mapping (never retried)', () => {
     [apiError(422, 'unknown_field', { fields: [{ field: 'foo', code: 'not_allowed' }] }), HonkValidationError, 'unknown_field'],
     [apiError(413, 'payload_too_large'), HonkValidationError, 'payload_too_large'],
     [apiError(401, 'invalid_key'), HonkAuthError, 'invalid_key'],
-    [apiError(403, 'priority_not_allowed'), HonkAuthError, 'priority_not_allowed'],
     [apiError(403, 'project_suspended'), HonkAuthError, 'project_suspended'],
     [apiError(409, 'idempotency_conflict'), HonkConflictError, 'idempotency_conflict'],
     [apiError(404, 'not_found'), HonkError, 'not_found'],
@@ -424,11 +419,38 @@ describe('error mapping (never retried)', () => {
     });
   }
 
-  test('422 exposes field errors', async () => {
-    const s = await server(apiError(422, 'validation_failed', { fields: [{ field: 'image_url', code: 'invalid_format', message: 'must be https' }] }));
+  test('the error names the code, the server message, every field and the request id', async () => {
+    const fields = [
+      { field: 'message', code: 'required', message: 'a message or a title is required' },
+      { field: 'event_type', code: 'invalid_enum', message: 'must be one of event, problem, recovery' },
+    ];
+    const s = await server(apiError(422, 'validation_failed', { message: 'The message is invalid', fields }));
+    await assert.rejects(new Honk({ url: s.url, key: KEY }).send({ message: 'x', eventType: 'incident' }), (e) => {
+      assert.ok(e instanceof HonkValidationError);
+      assert.equal(e.local, false);
+      assert.equal(e.code, 'validation_failed');
+      assert.equal(e.requestId, 'req_test');
+      assert.deepEqual(e.fields, fields);
+      assert.equal(
+        e.message,
+        'Honk 422 validation_failed: The message is invalid (message: a message or a title is required; event_type: must be one of event, problem, recovery) [request req_test]',
+      );
+      return true;
+    });
+  });
+
+  test('a field error without a message shows its code', async () => {
+    const s = await server(apiError(422, 'unknown_field', { message: 'unknown field', fields: [{ field: 'colour', code: 'not_allowed' }] }));
+    await assert.rejects(new Honk({ url: s.url, key: KEY }).send({ message: 'x', colour: 'red' }), /\(colour: not_allowed\) \[request req_test\]$/);
+    assert.equal(s.requests[0].json.colour, 'red', 'unknown keys are sent for the server to judge');
+  });
+
+  test('the request id falls back to the X-Request-Id header', async () => {
+    const s = await server({ status: 401, headers: { 'x-request-id': 'req_header' }, body: { error: { code: 'invalid_key', message: 'invalid key' } } });
     await assert.rejects(new Honk({ url: s.url, key: KEY }).send({ message: 'x' }), (e) => {
-      assert.deepEqual(e.fields, [{ field: 'image_url', code: 'invalid_format', message: 'must be https' }]);
-      assert.match(e.message, /image_url must be https/);
+      assert.ok(e instanceof HonkAuthError);
+      assert.equal(e.requestId, 'req_header');
+      assert.match(e.message, /\[request req_header\]$/);
       return true;
     });
   });
@@ -451,157 +473,137 @@ describe('error mapping (never retried)', () => {
   });
 });
 
-describe('local validation', () => {
-  const honk = new Honk({ url: 'https://honk.example.com', key: KEY });
-  const bad = [
-    [{}, 'message', 'required'],
-    [{ message: '   ' }, 'message', 'too_short'],
-    [{ message: 'x'.repeat(8193) }, 'message', 'too_long'],
-    [{ message: 'é'.repeat(4097) }, 'message', 'too_long'],
-    [{ message: 'bell\u0007' }, 'message', 'invalid_format'],
-    [{ message: 'x', title: 't'.repeat(161) }, 'title', 'too_long'],
-    [{ message: 'x', title: 'two\nlines' }, 'title', 'invalid_format'],
-    [{ message: 'x', environment: 'e'.repeat(33) }, 'environment', 'too_long'],
-    [{ message: 'x', groupKey: 'g'.repeat(129) }, 'group_key', 'too_long'],
-    [{ message: 'x', severity: 'fatal' }, 'severity', 'invalid_enum'],
-    [{ message: 'x', priority: 'asap' }, 'priority', 'invalid_enum'],
-    [{ message: 'x', category: 'crm' }, 'category', 'invalid_enum'],
-    [{ message: 'x', eventType: 'recovery' }, 'group_key', 'requires_group_key'],
-    [{ message: 'x', sourceSequence: 3 }, 'source_sequence', 'requires_group_key'],
-    [{ message: 'x', groupKey: 'g', sourceSequence: -1 }, 'source_sequence', 'out_of_range'],
-    [{ message: 'x', groupKey: 'g', sourceSequence: 1.5 }, 'source_sequence', 'out_of_range'],
-    [{ message: 'x', url: 'http://example.com' }, 'url', 'invalid_format'],
-    [{ message: 'x', url: 'https://user:pw@example.com' }, 'url', 'invalid_format'],
-    [{ message: 'x', url: `https://example.com/${'a'.repeat(2048)}` }, 'url', 'invalid_format'],
-    [{ message: 'x', imageUrl: 'https://cdn.example.com/a.jpg#x' }, 'image_url', 'invalid_format'],
-    [{ message: 'x', imageUrl: 'https://cdn.example.com:99999/a.jpg' }, 'image_url', 'invalid_format'],
-    [{ message: 'x', occurredAt: '2026-10-02 10:00' }, 'occurred_at', 'invalid_format'],
-    [{ message: 'x', occurredAt: new Date('nope') }, 'occurred_at', 'invalid_format'],
-    [{ message: 'x', metadata: { nested: { a: 1 } } }, 'metadata.nested', 'invalid_format'],
-    [{ message: 'x', metadata: { 'bad key': 1 } }, 'metadata.bad key', 'invalid_format'],
-    [{ message: 'x', metadata: { v: 'v'.repeat(513) } }, 'metadata.v', 'invalid_format'],
-    [{ message: 'x', metadata: Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`k${i}`, i])) }, 'metadata', 'too_long'],
-    [{ message: 'x', ttlSeconds: 59 }, 'ttl_seconds', 'out_of_range'],
-    [{ message: 'x', ttlSeconds: 86401 }, 'ttl_seconds', 'out_of_range'],
-    [{ message: 'x', group_key: 'g' }, 'group_key', 'not_allowed'],
-    [{ message: 'x', actions: Array(4).fill({ title: 'Call', url: 'tel:+15550134' }) }, 'actions', 'too_long'],
-    [{ message: 'x', actions: 'tel:+15550134' }, 'actions', 'invalid_format'],
-    [{ message: 'x', actions: ['tel:+15550134'] }, 'actions', 'invalid_format'],
-    [{ message: 'x', actions: [{ url: 'tel:+15550134' }] }, 'actions[0].title', 'required'],
-    [{ message: 'x', actions: [{ title: '   ', url: 'tel:+15550134' }] }, 'actions[0].title', 'required'],
-    [{ message: 'x', actions: [{ title: 't'.repeat(41), url: 'tel:+15550134' }] }, 'actions[0].title', 'too_long'],
-    [{ message: 'x', actions: [{ title: 'Call\nEmily', url: 'tel:+15550134' }] }, 'actions[0].title', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Call', url: '' }] }, 'actions[0].url', 'required'],
-    [{ message: 'x', actions: [{ title: 'Open', url: `https://example.com/${'a'.repeat(2030)}` }] }, 'actions[0].url', 'too_long'],
-    [{ message: 'x', actions: [{ title: 'Call', url: 'tel:+15550134' }, { title: 'Open', url: 'http://example.com' }] }, 'actions[1].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Open', url: 'https://user:pw@example.com' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Run', url: 'javascript:alert(1)' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Open', url: 'shop://orders/4812' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Reply', url: 'mailto:' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Reply', url: 'mailto:emily?subject=Hi' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Reply', url: 'mailto:emily@example.com?subject=Your quote' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Call', url: 'tel:call-me' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Call', url: 'tel:+1 555 0134' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Text', url: 'sms:?body=hi' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Reply', url: 'mailto:emily@localhost' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Reply', url: 'mailto:emily@example.com,ana@example.com' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Reply', url: 'mailto:emily@example.com?cc=boss@example.com' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Reply', url: 'mailto:emily@example.com?subject=%zz' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Text', url: 'sms:+15550134?subject=Hi' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Open', url: 'https://example.com/a\u00a0b' }] }, 'actions[0].url', 'invalid_format'],
-    [{ message: 'x', actions: [{ title: 'Call', url: '   ' }] }, 'actions[0].url', 'required'],
-    [{ message: 'x', actions: [{ title: 'Call', url: 'tel:+15550134', icon: 'phone' }] }, 'actions[0].icon', 'not_allowed'],
-    [{ message: 'x'.repeat(8000), metadata: Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`k${i}`, '"'.repeat(500)])) }, 'body', 'too_long'],
+describe('warnings (what the server corrected)', () => {
+  const warnings = [
+    { field: 'title', code: 'truncated', message: 'longer than 160 characters; shortened' },
+    { field: 'actions[1].url', code: 'ignored', message: 'not an https, mailto, tel or sms link; left out' },
+    { field: 'priority', code: 'downgraded', message: 'urgent needs a key that allows it; sent as high' },
   ];
-  for (const [msg, field, code] of bad) {
-    test(`${field} ${code}`, async () => {
+
+  test('are returned on the result, as the server sent them', async () => {
+    const s = await server(ok({ warnings }));
+    const res = await new Honk({ url: s.url, key: KEY }).honk({ title: 't'.repeat(200), message: 'x', priority: 'urgent' });
+    assert.deepEqual(res.warnings, warnings);
+    assert.equal(res.id, 'msg_01k6h3w4z5x6y7z8a9b0c1d2e3');
+  });
+
+  test('are [] when the server sends none or an older server omits them', async () => {
+    const s = await server([ok({ warnings: [] }), ok({ warnings: undefined }), ok({ warnings: 'junk' })]);
+    const honk = new Honk({ url: s.url, key: KEY });
+    for (let i = 0; i < 3; i++) assert.deepEqual((await honk.honk({ message: 'x' })).warnings, []);
+  });
+
+  test('onWarnings is called with the warnings and the result, only when there are some', async () => {
+    const s = await server([ok({ warnings }), ok({ warnings: [] })]);
+    const calls = [];
+    const honk = new Honk({ url: s.url, key: KEY, onWarnings: (w, r) => calls.push([w, r]) });
+    const first = await honk.loud('Disk 91%', '/var on app-01');
+    await honk.loud('Disk 92%', '/var on app-01');
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0][0], warnings);
+    assert.equal(calls[0][1], first);
+  });
+
+  test('a throwing onWarnings does not fail the send', async () => {
+    const s = await server(ok({ warnings }));
+    const honk = new Honk({
+      url: s.url,
+      key: KEY,
+      onWarnings: () => {
+        throw new Error('logger down');
+      },
+    });
+    assert.deepEqual((await honk.honk({ message: 'x' })).warnings, warnings);
+  });
+
+  test('a duplicate carries the warnings of the original', async () => {
+    const s = await server(ok({ duplicate: true, warnings }));
+    const res = await new Honk({ url: s.url, key: KEY }).honk({ message: 'x' }, { idempotencyKey: 'k' });
+    assert.equal(res.duplicate, true);
+    assert.deepEqual(res.warnings, warnings);
+  });
+
+  test('onWarnings must be a function', () => {
+    assert.throws(() => new Honk({ url: 'https://h', key: KEY, onWarnings: 'console' }), /onWarnings/);
+  });
+});
+
+describe('what the SDK still checks', () => {
+  const honk = new Honk({ url: 'https://honk.example.com', key: KEY });
+
+  test('a message or a title is required', async () => {
+    for (const msg of [{}, { message: '' }, { message: '   ', title: null }, { title: ' ' }, { message: null, title: '' }]) {
       await assert.rejects(honk.send(msg), (e) => {
         assert.ok(e instanceof HonkValidationError, e.message);
         assert.equal(e.local, true);
         assert.equal(e.attempts, 0);
-        assert.ok(
-          e.fields.some((f) => f.field === field && f.code === code),
-          `expected ${field}/${code}, got ${JSON.stringify(e.fields)}`,
-        );
+        assert.deepEqual(e.fields.map((f) => `${f.field}:${f.code}`), ['message:required']);
         return true;
       });
-    });
-  }
-
-  test('snake_case keys get a hint', () => {
-    assert.throws(() => buildBody({ message: 'x', group_key: 'g' }), /group_key unknown field \(use groupKey\)/);
-  });
-
-  test('all errors are reported at once', () => {
-    assert.throws(
-      () => buildBody({ message: '', severity: 'x', url: 'ftp://a' }),
-      (e) => e.fields.map((f) => f.field).join(',') === 'message,severity,url',
-    );
-  });
-
-  test('valid edge cases pass', () => {
-    const body = buildBody({
-      message: 'line1\nline2\ttab\r\n',
-      title: 't'.repeat(160),
-      occurredAt: '2026-10-02T00:10:00.123456+03:00',
-      url: 'https://[::1]:8443/path?q=1#frag',
-      imageUrl: 'HTTPS://cdn.example.com/a.jpg?size=2',
-      metadata: { 'a.b-c_d': 'v', n: 1.5, b: false },
-      groupKey: 'g',
-      sourceSequence: Number.MAX_SAFE_INTEGER,
-      ttlSeconds: 60,
-    });
-    assert.equal(body.source_sequence, 9007199254740991);
-  });
-
-  test('valid actions pass', () => {
-    for (const url of [
-      'https://shop.example.com:8443/admin/requests/4812?tab=notes#reply',
-      'HTTPS://shop.example.com',
-      'mailto:emily@example.com',
-      'MailTo:emily.carter+quotes@example.co.uk?subject=Your%20quote&body=Hi%20Emily%2C',
-      'tel:+15550134',
-      'TEL:+1-(555)-013.4',
-      'tel://+40721000000',
-      'sms:+15550134',
-      'SMS:0721000000?body=On%20my%20way',
-      'mailto:%65mily@example.com?body=a+b&subject=',
-      '  tel:+15550134  ',
-    ]) {
-      assert.deepEqual(buildBody({ message: 'x', actions: [{ title: 'Open', url }] }).actions, [{ title: 'Open', url }], url);
     }
-    const title = `  ${'é'.repeat(39)}🚀  `; // 40 code points once trimmed
-    assert.equal(buildBody({ message: 'x', actions: [{ title, url: 'tel:+15550134' }] }).actions[0].title, title);
   });
 
-  test('more than 3 actions is one error, like on the server', () => {
-    assert.throws(
-      () => buildBody({ message: 'x', actions: ['a', 'b', { title: '' }, { url: 'ftp://x' }] }),
-      (e) => e.fields.map((f) => `${f.field}:${f.code}`).join(',') === 'actions:too_long',
-    );
+  test('a title alone, or a message alone, is sent', async () => {
+    const s = await server(ok());
+    const client = new Honk({ url: s.url, key: KEY });
+    await client.honk({ title: 'Backup finished' });
+    await client.honk({ message: 'Backup finished in 42 s' });
+    assert.deepEqual(s.requests.map((r) => r.json), [{ title: 'Backup finished' }, { message: 'Backup finished in 42 s' }]);
   });
 
-  test('all action errors are reported with their index', () => {
-    assert.throws(
-      () => buildBody({ message: 'x', actions: [{ title: 'Reply', url: 'mailto:emily@example.com' }, { title: '', url: 'ftp://files' }, { title: 'Call' }] }),
-      (e) => e.fields.map((f) => `${f.field}:${f.code}`).join(',') === 'actions[1].title:required,actions[1].url:invalid_format,actions[2].url:required',
-    );
+  test('the body must fit in 16 KiB', async () => {
+    const metadata = Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`k${i}`, '"'.repeat(500)]));
+    await assert.rejects(honk.send({ message: 'x'.repeat(8000), metadata }), (e) => e instanceof HonkValidationError && e.local && e.fields[0].field === 'body' && e.fields[0].code === 'too_long');
   });
 
-  test('invalid idempotency keys are rejected locally', async () => {
-    for (const key of ['', 'has space', 'x'.repeat(129), 'ünicode']) {
+  test('field contents are not checked: the server corrects them and says so', async () => {
+    const s = await server(ok());
+    const msg = {
+      message: 'bell\u0007',
+      title: 't'.repeat(200),
+      severity: 'fatal',
+      priority: 'asap',
+      category: 'crm',
+      eventType: 'recovery',
+      sourceSequence: 3,
+      url: 'http://example.com',
+      imageUrl: 'https://cdn.example.com/a.jpg#x',
+      occurredAt: '2026-10-02 10:00',
+      metadata: { 'bad key': { nested: 1 } },
+      ttlSeconds: 5,
+      actions: [{ title: 'Run', url: 'javascript:alert(1)' }, { title: 'Call', url: 'tel:+15550134' }, { title: 'x' }, { title: 'y', url: 'sms:1' }],
+    };
+    await new Honk({ url: s.url, key: KEY }).honk(msg);
+    assert.deepEqual(s.requests[0].json, {
+      title: msg.title,
+      message: msg.message,
+      severity: 'fatal',
+      priority: 'asap',
+      category: 'crm',
+      event_type: 'recovery',
+      occurred_at: '2026-10-02 10:00',
+      url: 'http://example.com',
+      image_url: 'https://cdn.example.com/a.jpg#x',
+      actions: msg.actions,
+      metadata: msg.metadata,
+      ttl_seconds: 5,
+      source_sequence: 3,
+    });
+  });
+
+  test('an invalid Date goes to the server, which leaves it out with a warning', () => {
+    assert.equal(buildBody({ message: 'x', occurredAt: new Date('nope') }).occurred_at, 'Invalid Date');
+  });
+
+  test('invalid idempotency keys are rejected before sending (fetch could not send them)', async () => {
+    for (const key of ['', 'has space', 'x'.repeat(129), 'ünicode', 'line\nbreak']) {
       await assert.rejects(honk.send({ message: 'x' }, { idempotencyKey: key }), (e) => e instanceof HonkValidationError && e.fields[0].field === 'Idempotency-Key');
     }
   });
 
-  test('validate:false sends actions as given', () => {
-    const actions = [{ title: 'Run', url: 'javascript:alert(1)' }];
-    assert.deepEqual(buildBody({ message: 'x', actions }, {}, false).actions, actions);
-  });
-
-  test('validate:false leaves value checks to the server', async () => {
-    const s = await server(apiError(422, 'validation_failed', { fields: [{ field: 'severity', code: 'invalid_enum' }] }));
-    await assert.rejects(new Honk({ url: s.url, key: KEY, validate: false }).send({ message: 'x', severity: 'fatal' }), (e) => e.local === false);
+  test('the old validate option is accepted and ignored', async () => {
+    const s = await server(ok());
+    await new Honk({ url: s.url, key: KEY, validate: true }).send({ message: 'x', severity: 'fatal' });
     assert.equal(s.requests[0].json.severity, 'fatal');
   });
 });
