@@ -94,7 +94,7 @@ export class HonkAuthError extends HonkError {
   }
 }
 
-/** 429: `quota_exceeded` (daily messages_per_day, until UTC midnight) or `rate_limited`, after retries. See `retryAfter`. */
+/** 429: `quota_exceeded` (daily messages_per_day, until UTC midnight), `rate_limited` or `overloaded` (server backpressure), after retries. See `retryAfter`. */
 export class HonkQuotaError extends HonkError {
   override readonly kind = 'quota' as const;
   constructor(message: string, init: HonkErrorInit = {}) {

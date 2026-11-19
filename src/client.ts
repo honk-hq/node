@@ -94,15 +94,19 @@ export class Honk {
       };
       return g.process?.env?.[name] ?? g.Deno?.env?.get(name);
     };
+    // Only a value given in `options.defaults` overrides the environment; an explicit
+    // `undefined` (e.g. `{ channel: undefined }`) keeps the variable's value.
+    const given: Defaults = options.defaults ?? {};
+    const pick = (name: keyof Defaults, variable: string) =>
+      given[name] !== undefined ? given[name] : env(variable);
     return new Honk({
       ...options,
       url: options.url ?? env('HONK_URL') ?? '',
       key: options.key ?? env('HONK_KEY') ?? '',
       defaults: {
-        source: env('HONK_SOURCE'),
-        environment: env('HONK_ENVIRONMENT'),
-        channel: env('HONK_CHANNEL'),
-        ...options.defaults,
+        source: pick('source', 'HONK_SOURCE'),
+        environment: pick('environment', 'HONK_ENVIRONMENT'),
+        channel: pick('channel', 'HONK_CHANNEL'),
       },
     });
   }

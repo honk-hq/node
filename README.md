@@ -212,7 +212,7 @@ field problem and the request id, e.g.
 |---|---|---|---|
 | `HonkValidationError` | `validation` | refused by the server (`400`/`413`/`415`/`422`: neither message nor title, an unknown top-level field, an invalid `eventType`, invalid JSON, over 16 KiB); `fields` names each problem. `local: true` when the SDK refused it before sending | fix the message |
 | `HonkAuthError` | `auth` | `401 invalid_key`, `403 project_suspended`, `workspace_suspended` | fix the key |
-| `HonkQuotaError` | `quota` | `429 quota_exceeded` (daily, resets at UTC midnight) or `rate_limited`, after retries | retry after `retryAfter` seconds |
+| `HonkQuotaError` | `quota` | `429 quota_exceeded` (daily, resets at UTC midnight), `rate_limited` or `overloaded` (server backpressure), after retries | retry after `retryAfter` seconds |
 | `HonkConflictError` | `conflict` | `409 idempotency_conflict`: same key, different payload | use a new key, or send the original payload |
 | `HonkNetworkError` | `network` | unreachable on every attempt | retry later, same key |
 | `HonkTimeoutError` | `timeout` | attempts timed out; the message may or may not be stored | retry later, same key |

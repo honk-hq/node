@@ -634,6 +634,22 @@ describe('construction', () => {
     }
   });
 
+  test('fromEnv: an undefined value in options.defaults keeps the environment value', async () => {
+    const s = await server(ok());
+    const saved = { ...process.env };
+    Object.assign(process.env, { HONK_URL: s.url, HONK_KEY: KEY, HONK_SOURCE: 'cron', HONK_ENVIRONMENT: 'staging', HONK_CHANNEL: 'ops' });
+    try {
+      const honk = Honk.fromEnv({ defaults: { source: undefined, environment: 'prod', channel: undefined } });
+      await honk.send({ message: 'x' });
+      assert.deepEqual(s.requests[0].json, { message: 'x', source: 'cron', environment: 'prod', channel: 'ops' });
+    } finally {
+      for (const k of ['HONK_URL', 'HONK_KEY', 'HONK_SOURCE', 'HONK_ENVIRONMENT', 'HONK_CHANNEL']) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    }
+  });
+
   test('VERSION matches package.json', () => {
     assert.equal(VERSION, JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version);
   });

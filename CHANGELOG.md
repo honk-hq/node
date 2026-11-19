@@ -6,6 +6,8 @@ All notable changes to `honk-honk` (npm) are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-19
+
 The SDK is now a thin wrapper: the server "delivers first" (it corrects what it can and accepts
 the message), so the SDK no longer second-guesses it.
 
@@ -35,6 +37,12 @@ the message), so the SDK no longer second-guesses it.
 - `LIMITS` keeps only `bodyBytes` and `idempotencyKey`.
 - `priority_not_allowed` is no longer documented: the server lowers `urgent` to `high` with a
   `downgraded` warning instead.
+
+### Fixed
+- `Honk.fromEnv({ defaults: { channel: undefined } })` no longer erases `HONK_CHANNEL` (or
+  `HONK_SOURCE`, `HONK_ENVIRONMENT`): only a value given in `options.defaults` overrides the
+  environment.
+- Docs: `HonkQuotaError` also covers `429 overloaded` (server backpressure).
 
 ## [0.4.1] - 2026-10-18
 
